@@ -1,5 +1,4 @@
 -- Intelligent Core Banking & Commercial Credit Risk Engine
--- MySQL 8.0+ relational database
 
 DROP DATABASE IF EXISTS intelligent_core_banking;
 CREATE DATABASE intelligent_core_banking CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -531,18 +530,3 @@ CALL sp_transfer_funds(
     @demo_transaction_id
 );
 
--- =========================
--- DEMO / VIVA QUERIES
--- =========================
-
-SELECT * FROM users;
-SELECT * FROM vw_customer_account_summary;
-SELECT * FROM transactions ORDER BY created_at DESC;
-SELECT * FROM account_audit_log ORDER BY changed_at DESC;
-SELECT * FROM loans;
-SELECT installment_number, due_date, principal_due, interest_due, total_due, is_settled
-FROM loan_repayments
-WHERE loan_id='cccccccc-cccc-4ccc-8ccc-ccccccccccc1'
-ORDER BY installment_number;
-SELECT * FROM vw_executive_portfolio_summary;
-SELECT * FROM vw_officer_loan_performance;
