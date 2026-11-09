@@ -1,0 +1,2702 @@
+{
+    "type": "MySQLNotebook",
+    "version": "1.0",
+    "caption": "DB Notebook",
+    "content": "\nDROP DATABASE IF EXISTS intelligent_banking;\nCREATE DATABASE intelligent_banking CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;\nUSE intelligent_banking;\n\nCREATE TABLE users (\n    user_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    email VARCHAR(255) UNIQUE NOT NULL,\n    password_hash VARCHAR(255) NOT NULL,\n    first_name VARCHAR(100) NOT NULL,\n    last_name VARCHAR(100) NOT NULL,\n    role ENUM('customer','loan_officer','risk_admin') NOT NULL DEFAULT 'customer',\n    is_active BOOLEAN NOT NULL DEFAULT TRUE,\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n) ENGINE=InnoDB;\n\nCREATE TABLE branches (\n    branch_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    location VARCHAR(150) NOT NULL,\n    routing_code VARCHAR(30) UNIQUE NOT NULL\n) ENGINE=InnoDB;\n\nCREATE TABLE accounts (\n    account_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    user_id CHAR(36) NOT NULL,\n    branch_id CHAR(36) NOT NULL,\n    account_number VARCHAR(34) UNIQUE NOT NULL,\n    type ENUM('checking','savings','escrow','loan_disbursement') NOT NULL,\n    status ENUM('active','frozen','closed') NOT NULL DEFAULT 'active',\n    currency CHAR(3) NOT NULL DEFAULT 'INR',\n    balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,\n    minimum_balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    CONSTRAINT fk_accounts_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE RESTRICT,\n    CONSTRAINT fk_accounts_branch FOREIGN KEY (branch_id) REFERENCES branches(branch_id) ON DELETE RESTRICT,\n    CONSTRAINT chk_account_balance CHECK (balance >= minimum_balance),\n    CONSTRAINT chk_minimum_balance CHECK (minimum_balance >= 0.00)\n) ENGINE=InnoDB;\n\nCREATE TABLE beneficiaries (\n    beneficiary_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    user_id CHAR(36) NOT NULL,\n    payee_name VARCHAR(150) NOT NULL,\n    routing_number VARCHAR(30),\n    account_number VARCHAR(34) NOT NULL,\n    CONSTRAINT fk_beneficiaries_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,\n    CONSTRAINT uq_beneficiary UNIQUE (user_id, routing_number, account_number)\n) ENGINE=InnoDB;\n\nCREATE TABLE security_logs (\n    log_id BIGINT PRIMARY KEY AUTO_INCREMENT,\n    user_id CHAR(36) NOT NULL,\n    ip_address VARCHAR(45),\n    device_fingerprint VARCHAR(255),\n    login_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    auth_status ENUM('success','failed','locked') NOT NULL,\n    CONSTRAINT fk_security_logs_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE\n) ENGINE=InnoDB;\n\nCREATE TABLE transactions (\n    transaction_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    reference_number VARCHAR(64) UNIQUE NOT NULL,\n    source_account_id CHAR(36),\n    destination_account_id CHAR(36),\n    type ENUM('deposit','withdrawal','transfer','loan_disbursement','repayment') NOT NULL,\n    amount DECIMAL(15,2) NOT NULL,\n    description TEXT,\n    status ENUM('pending','completed','failed','reversed') NOT NULL DEFAULT 'completed',\n    fee_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    CONSTRAINT fk_transactions_source FOREIGN KEY (source_account_id) REFERENCES accounts(account_id) ON DELETE RESTRICT,\n    CONSTRAINT fk_transactions_destination FOREIGN KEY (destination_account_id) REFERENCES accounts(account_id) ON DELETE RESTRICT,\n    CONSTRAINT chk_transaction_amount CHECK (amount > 0.00),\n    CONSTRAINT chk_transaction_fee CHECK (fee_amount >= 0.00),\n    CONSTRAINT chk_transaction_accounts CHECK (\n        (type = 'deposit' AND source_account_id IS NULL AND destination_account_id IS NOT NULL) OR\n        (type = 'withdrawal' AND source_account_id IS NOT NULL AND destination_account_id IS NULL) OR\n        (type IN ('transfer','loan_disbursement','repayment') AND source_account_id IS NOT NULL AND destination_account_id IS NOT NULL AND source_account_id <> destination_account_id)\n    )\n) ENGINE=InnoDB;\n\nCREATE TABLE loans (\n    loan_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    borrower_id CHAR(36) NOT NULL,\n    officer_id CHAR(36),\n    mongodb_credit_profile_id VARCHAR(24) NOT NULL,\n    principal_amount DECIMAL(15,2) NOT NULL,\n    annual_interest_rate DECIMAL(5,4) NOT NULL,\n    term_months INT NOT NULL,\n    status ENUM('pending','under_review','approved','rejected','active','closed','defaulted') NOT NULL DEFAULT 'pending',\n    approval_date DATE,\n    officer_comments TEXT,\n    override_flag BOOLEAN NOT NULL DEFAULT FALSE,\n    approved_at DATETIME,\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    CONSTRAINT fk_loans_borrower FOREIGN KEY (borrower_id) REFERENCES users(user_id) ON DELETE RESTRICT,\n    CONSTRAINT fk_loans_officer FOREIGN KEY (officer_id) REFERENCES users(user_id) ON DELETE SET NULL,\n    CONSTRAINT chk_loan_principal CHECK (principal_amount > 0.00),\n    CONSTRAINT chk_interest_rate CHECK (annual_interest_rate >= 0.0000 AND annual_interest_rate <= 1.0000),\n    CONSTRAINT chk_loan_term CHECK (term_months > 0)\n) ENGINE=InnoDB;\n\nCREATE TABLE collateral (\n    asset_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    loan_id CHAR(36) NOT NULL,\n    type VARCHAR(80) NOT NULL,\n    estimated_value DECIMAL(15,2) NOT NULL,\n    valuation_date DATE NOT NULL,\n    CONSTRAINT fk_collateral_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id) ON DELETE CASCADE,\n    CONSTRAINT chk_collateral_value CHECK (estimated_value > 0.00)\n) ENGINE=InnoDB;\n\nCREATE TABLE loan_repayments (\n    repayment_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),\n    loan_id CHAR(36) NOT NULL,\n    installment_number INT NOT NULL,\n    due_date DATE NOT NULL,\n    principal_due DECIMAL(15,2) NOT NULL,\n    interest_due DECIMAL(15,2) NOT NULL,\n    total_due DECIMAL(15,2) NOT NULL,\n    amount_paid DECIMAL(15,2) NOT NULL DEFAULT 0.00,\n    is_settled BOOLEAN NOT NULL DEFAULT FALSE,\n    paid_at DATETIME,\n    CONSTRAINT fk_repayments_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id) ON DELETE CASCADE,\n    CONSTRAINT chk_installment_number CHECK (installment_number > 0),\n    CONSTRAINT chk_repayment_amounts CHECK (principal_due >= 0.00 AND interest_due >= 0.00 AND total_due = principal_due + interest_due AND amount_paid >= 0.00),\n    CONSTRAINT uq_loan_installment UNIQUE (loan_id, installment_number)\n) ENGINE=InnoDB;\n\nCREATE TABLE account_audit_log (\n    audit_id BIGINT PRIMARY KEY AUTO_INCREMENT,\n    account_id CHAR(36) NOT NULL,\n    old_balance DECIMAL(15,2) NOT NULL,\n    new_balance DECIMAL(15,2) NOT NULL,\n    delta_amount DECIMAL(15,2) NOT NULL,\n    operation_type VARCHAR(32) NOT NULL,\n    changed_by_app_user VARCHAR(255) DEFAULT NULL,\n    changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    CONSTRAINT fk_audit_account FOREIGN KEY (account_id) REFERENCES accounts(account_id) ON DELETE CASCADE\n) ENGINE=InnoDB;\n\nCREATE INDEX idx_users_role_email ON users(role, email);\nCREATE INDEX idx_accounts_user_id ON accounts(user_id);\nCREATE INDEX idx_accounts_branch_id ON accounts(branch_id);\nCREATE INDEX idx_accounts_status ON accounts(status);\nCREATE INDEX idx_transactions_source_dest ON transactions(source_account_id, destination_account_id);\nCREATE INDEX idx_transactions_created_at ON transactions(created_at);\nCREATE INDEX idx_loans_borrower_status ON loans(borrower_id, status);\nCREATE INDEX idx_loan_repayments_schedule ON loan_repayments(loan_id, due_date, is_settled);\nCREATE INDEX idx_audit_account_timestamp ON account_audit_log(account_id, changed_at);\n\nDELIMITER $$\n\nCREATE TRIGGER trg_validate_account_minimum_balance\nBEFORE UPDATE ON accounts\nFOR EACH ROW\nBEGIN\n    IF NEW.balance < NEW.minimum_balance THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Transaction rejected: balance would fall below minimum balance';\n    END IF;\nEND$$\n\nCREATE TRIGGER trg_account_balance_audit\nAFTER UPDATE ON accounts\nFOR EACH ROW\nBEGIN\n    IF NOT (OLD.balance <=> NEW.balance) THEN\n        INSERT INTO account_audit_log (\n            account_id, old_balance, new_balance, delta_amount, operation_type, changed_by_app_user\n        ) VALUES (\n            NEW.account_id, OLD.balance, NEW.balance, NEW.balance - OLD.balance, 'UPDATE', CURRENT_USER()\n        );\n    END IF;\nEND$$\n\nCREATE PROCEDURE sp_transfer_funds(\n    IN p_source_account_id CHAR(36),\n    IN p_destination_account_id CHAR(36),\n    IN p_amount DECIMAL(15,2),\n    IN p_description TEXT,\n    OUT p_transaction_id CHAR(36)\n)\nBEGIN\n    DECLARE v_source_balance DECIMAL(15,2);\n    DECLARE v_source_minimum DECIMAL(15,2);\n    DECLARE v_source_status VARCHAR(20);\n    DECLARE v_destination_status VARCHAR(20);\n    DECLARE v_first_lock CHAR(36);\n    DECLARE v_second_lock CHAR(36);\n    DECLARE v_locked_id CHAR(36);\n    DECLARE v_account_count INT;\n\n    DECLARE EXIT HANDLER FOR SQLEXCEPTION\n    BEGIN\n        ROLLBACK;\n        RESIGNAL;\n    END;\n\n    IF p_amount <= 0 THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Transfer amount must be positive';\n    END IF;\n\n    IF p_source_account_id = p_destination_account_id THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Source and destination accounts must be different';\n    END IF;\n\n    START TRANSACTION;\n\n    SELECT COUNT(*) INTO v_account_count\n    FROM accounts\n    WHERE account_id IN (p_source_account_id, p_destination_account_id);\n\n    IF v_account_count <> 2 THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Source or destination account not found';\n    END IF;\n\n    IF p_source_account_id < p_destination_account_id THEN\n        SET v_first_lock = p_source_account_id;\n        SET v_second_lock = p_destination_account_id;\n    ELSE\n        SET v_first_lock = p_destination_account_id;\n        SET v_second_lock = p_source_account_id;\n    END IF;\n\n    SELECT account_id INTO v_locked_id\n    FROM accounts\n    WHERE account_id = v_first_lock\n    FOR UPDATE;\n\n    SELECT account_id INTO v_locked_id\n    FROM accounts\n    WHERE account_id = v_second_lock\n    FOR UPDATE;\n\n    SELECT balance, minimum_balance, status\n    INTO v_source_balance, v_source_minimum, v_source_status\n    FROM accounts\n    WHERE account_id = p_source_account_id;\n\n    SELECT status\n    INTO v_destination_status\n    FROM accounts\n    WHERE account_id = p_destination_account_id;\n\n    IF v_source_status <> 'active' OR v_destination_status <> 'active' THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Both accounts must be active';\n    END IF;\n\n    IF v_source_balance - p_amount < v_source_minimum THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Insufficient available balance';\n    END IF;\n\n    UPDATE accounts\n    SET balance = balance - p_amount\n    WHERE account_id = p_source_account_id;\n\n    UPDATE accounts\n    SET balance = balance + p_amount\n    WHERE account_id = p_destination_account_id;\n\n    SET p_transaction_id = UUID();\n\n    INSERT INTO transactions (\n        transaction_id, reference_number, source_account_id, destination_account_id,\n        type, amount, description, status\n    ) VALUES (\n        p_transaction_id,\n        CONCAT('TXN-', UPPER(SUBSTRING(REPLACE(p_transaction_id, '-', ''), 1, 8))),\n        p_source_account_id,\n        p_destination_account_id,\n        'transfer',\n        p_amount,\n        p_description,\n        'completed'\n    );\n\n    COMMIT;\nEND$$\n\nCREATE PROCEDURE sp_generate_amortization_schedule(IN p_loan_id CHAR(36))\nBEGIN\n    DECLARE v_principal DECIMAL(15,2);\n    DECLARE v_annual_rate DECIMAL(5,4);\n    DECLARE v_term_months INT;\n    DECLARE v_status VARCHAR(20);\n    DECLARE v_monthly_rate DECIMAL(15,10);\n    DECLARE v_monthly_payment DECIMAL(15,2);\n    DECLARE v_remaining_balance DECIMAL(15,2);\n    DECLARE v_interest_due DECIMAL(15,2);\n    DECLARE v_principal_due DECIMAL(15,2);\n    DECLARE v_due_date DATE;\n    DECLARE v_i INT DEFAULT 1;\n    DECLARE v_loan_count INT;\n\n    SELECT COUNT(*) INTO v_loan_count\n    FROM loans\n    WHERE loan_id = p_loan_id;\n\n    IF v_loan_count = 0 THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Loan not found';\n    END IF;\n\n    SELECT principal_amount, annual_interest_rate, term_months, status\n    INTO v_principal, v_annual_rate, v_term_months, v_status\n    FROM loans\n    WHERE loan_id = p_loan_id\n    FOR UPDATE;\n\n    IF v_status <> 'approved' THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Loan must be approved before schedule generation';\n    END IF;\n\n    DELETE FROM loan_repayments\n    WHERE loan_id = p_loan_id AND is_settled = FALSE;\n\n    SET v_remaining_balance = v_principal;\n    SET v_due_date = CURDATE();\n\n    IF v_annual_rate = 0 THEN\n        SET v_monthly_rate = 0;\n        SET v_monthly_payment = ROUND(v_principal / v_term_months, 2);\n    ELSE\n        SET v_monthly_rate = v_annual_rate / 12.0;\n        SET v_monthly_payment = ROUND(\n            v_principal * (v_monthly_rate * POWER(1 + v_monthly_rate, v_term_months)) /\n            (POWER(1 + v_monthly_rate, v_term_months) - 1),\n            2\n        );\n    END IF;\n\n    WHILE v_i <= v_term_months DO\n        SET v_due_date = DATE_ADD(v_due_date, INTERVAL 1 MONTH);\n\n        IF v_i = v_term_months THEN\n            SET v_principal_due = ROUND(v_remaining_balance, 2);\n            SET v_interest_due = ROUND(v_remaining_balance * v_monthly_rate, 2);\n            SET v_monthly_payment = v_principal_due + v_interest_due;\n        ELSE\n            SET v_interest_due = ROUND(v_remaining_balance * v_monthly_rate, 2);\n            SET v_principal_due = v_monthly_payment - v_interest_due;\n        END IF;\n\n        INSERT INTO loan_repayments (\n            loan_id, installment_number, due_date,\n            principal_due, interest_due, total_due\n        ) VALUES (\n            p_loan_id, v_i, v_due_date,\n            v_principal_due, v_interest_due, v_monthly_payment\n        );\n\n        SET v_remaining_balance = v_remaining_balance - v_principal_due;\n        SET v_i = v_i + 1;\n    END WHILE;\n\n    UPDATE loans\n    SET status = 'active'\n    WHERE loan_id = p_loan_id;\nEND$$\n\nCREATE PROCEDURE sp_approve_loan(\n    IN p_loan_id CHAR(36),\n    IN p_officer_id CHAR(36),\n    IN p_comments TEXT,\n    IN p_override BOOLEAN\n)\nBEGIN\n    DECLARE v_officer_count INT;\n    DECLARE v_rows INT;\n\n    DECLARE EXIT HANDLER FOR SQLEXCEPTION\n    BEGIN\n        ROLLBACK;\n        RESIGNAL;\n    END;\n\n    START TRANSACTION;\n\n    SELECT COUNT(*) INTO v_officer_count\n    FROM users\n    WHERE user_id = p_officer_id\n      AND role = 'loan_officer'\n      AND is_active = TRUE;\n\n    IF v_officer_count = 0 THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Valid active loan officer required';\n    END IF;\n\n    UPDATE loans\n    SET status = 'approved',\n        officer_id = p_officer_id,\n        approval_date = CURDATE(),\n        approved_at = CURRENT_TIMESTAMP,\n        officer_comments = p_comments,\n        override_flag = p_override\n    WHERE loan_id = p_loan_id\n      AND status IN ('pending','under_review');\n\n    SET v_rows = ROW_COUNT();\n\n    IF v_rows = 0 THEN\n        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Loan is not pending or under review';\n    END IF;\n\n    CALL sp_generate_amortization_schedule(p_loan_id);\n\n    COMMIT;\nEND$$\n\nDELIMITER ;\n\nCREATE OR REPLACE VIEW vw_executive_portfolio_summary AS\nSELECT\n    SUM(CASE WHEN a.status = 'active' THEN 1 ELSE 0 END) AS total_active_accounts,\n    COALESCE(SUM(CASE WHEN a.status = 'active' THEN a.balance ELSE 0 END), 0.00) AS aggregate_deposits,\n    COALESCE(AVG(CASE WHEN a.status = 'active' THEN a.balance END), 0.00) AS average_account_balance,\n    (SELECT COALESCE(SUM(principal_amount), 0.00) FROM loans WHERE status = 'active') AS total_active_loan_exposure,\n    (SELECT COALESCE(SUM(principal_amount), 0.00) FROM loans WHERE status = 'defaulted') AS total_defaulted_exposure,\n    (SELECT COUNT(*) FROM loans WHERE status = 'pending') AS pending_loan_applications,\n    (SELECT ROUND(\n        100.0 * SUM(CASE WHEN status = 'defaulted' THEN 1 ELSE 0 END) /\n        NULLIF(SUM(CASE WHEN status IN ('active','closed','defaulted') THEN 1 ELSE 0 END), 0),\n        2\n     ) FROM loans) AS non_performing_loan_ratio_percentage\nFROM accounts a;\n\nCREATE OR REPLACE VIEW vw_officer_loan_performance AS\nSELECT\n    u.user_id AS officer_id,\n    CONCAT(u.first_name, ' ', u.last_name) AS officer_name,\n    COUNT(l.loan_id) AS total_processed_loans,\n    SUM(CASE WHEN l.status IN ('approved','active') THEN 1 ELSE 0 END) AS approved_loans,\n    SUM(CASE WHEN l.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_loans,\n    COALESCE(SUM(CASE WHEN l.status IN ('approved','active') THEN l.principal_amount ELSE 0 END), 0.00) AS total_approved_capital,\n    COALESCE(AVG(CASE WHEN l.status IN ('approved','active') THEN l.annual_interest_rate END), 0.00) AS average_approved_rate\nFROM users u\nLEFT JOIN loans l ON l.officer_id = u.user_id\nWHERE u.role = 'loan_officer'\nGROUP BY u.user_id, u.first_name, u.last_name;\n\nINSERT INTO users (user_id, email, password_hash, first_name, last_name, role) VALUES\n('11111111-1111-1111-1111-111111111111', 'aarav@example.com', 'demo_hash_1', 'Aarav', 'Mehta', 'customer'),\n('11111111-1111-1111-1111-111111111112', 'maya@example.com', 'demo_hash_2', 'Maya', 'Singh', 'customer'),\n('11111111-1111-1111-1111-111111111113', 'officer@example.com', 'demo_hash_3', 'Riya', 'Sharma', 'loan_officer'),\n('11111111-1111-1111-1111-111111111114', 'admin@example.com', 'demo_hash_4', 'Kabir', 'Admin', 'risk_admin');\n\nINSERT INTO branches (branch_id, location, routing_code) VALUES\n('22222222-2222-2222-2222-222222222221', 'Bengaluru Main Branch', 'ICB0001'),\n('22222222-2222-2222-2222-222222222222', 'Delhi Central Branch', 'ICB0002');\n\nINSERT INTO accounts (\n    account_id, user_id, branch_id, account_number, type, balance, minimum_balance\n) VALUES\n('33333333-3333-3333-3333-333333333331', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222221', 'ICB-SAV-1001', 'savings', 50000.00, 1000.00),\n('33333333-3333-3333-3333-333333333332', '11111111-1111-1111-1111-111111111112', '22222222-2222-2222-2222-222222222221', 'ICB-SAV-1002', 'savings', 20000.00, 1000.00),\n('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222221', 'ICB-ESC-1001', 'escrow', 0.00, 0.00);\n\nINSERT INTO beneficiaries (user_id, payee_name, routing_number, account_number) VALUES\n('11111111-1111-1111-1111-111111111111', 'Maya Singh', 'ICB0001', 'ICB-SAV-1002');\n\nINSERT INTO security_logs (user_id, ip_address, device_fingerprint, auth_status) VALUES\n('11111111-1111-1111-1111-111111111111', '192.168.1.10', 'demo-device-a1', 'success'),\n('11111111-1111-1111-1111-111111111113', '192.168.1.20', 'demo-device-o1', 'success');\n\nINSERT INTO transactions (\n    transaction_id, reference_number, source_account_id, destination_account_id, type, amount, description\n) VALUES\n('66666666-6666-6666-6666-666666666661', 'OPEN-A1001', NULL, '33333333-3333-3333-3333-333333333331', 'deposit', 50000.00, 'Opening balance'),\n('66666666-6666-6666-6666-666666666662', 'OPEN-A1002', NULL, '33333333-3333-3333-3333-333333333332', 'deposit', 20000.00, 'Opening balance');\n\nINSERT INTO loans (\n    loan_id, borrower_id, mongodb_credit_profile_id,\n    principal_amount, annual_interest_rate, term_months, status\n) VALUES (\n    '44444444-4444-4444-4444-444444444441',\n    '11111111-1111-1111-1111-111111111111',\n    '64b000000000000000000001',\n    120000.00,\n    0.1200,\n    12,\n    'pending'\n);\n\nINSERT INTO collateral (loan_id, type, estimated_value, valuation_date) VALUES\n('44444444-4444-4444-4444-444444444441', 'Vehicle', 250000.00, CURDATE());\n\n-- Demo\nSELECT account_number, balance\nFROM accounts\nWHERE account_id IN (\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332'\n)\nORDER BY account_number;\n\nCALL sp_transfer_funds(\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332',\n    5000.00,\n    'Demo transfer',\n    @transaction_id\n);\n\nSELECT @transaction_id AS generated_transaction_id;\n\nSELECT account_number, balance\nFROM accounts\nWHERE account_id IN (\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332'\n)\nORDER BY account_number;\n\nSELECT reference_number, type, amount, status\nFROM transactions\nORDER BY created_at DESC\nLIMIT 3;\n\nSELECT account_id, old_balance, new_balance, delta_amount\nFROM account_audit_log\nORDER BY audit_id;\n\nCALL sp_approve_loan(\n    '44444444-4444-4444-4444-444444444441',\n    '11111111-1111-1111-1111-111111111113',\n    'Demo approval after risk review',\n    FALSE\n);\n\nSELECT loan_id, status, principal_amount, annual_interest_rate, term_months, officer_id\nFROM loans\nWHERE loan_id = '44444444-4444-4444-4444-444444444441';\n\nSELECT installment_number, due_date, principal_due, interest_due, total_due, is_settled\nFROM loan_repayments\nWHERE loan_id = '44444444-4444-4444-4444-444444444441'\nORDER BY installment_number\nLIMIT 5;\n\nSELECT * FROM vw_executive_portfolio_summary;\n\nSELECT officer_name, total_processed_loans, approved_loans, rejected_loans,\n       total_approved_capital, average_approved_rate\nFROM vw_officer_loan_performance;\n\n\n\n\n",
+    "options": {
+        "tabSize": 4,
+        "insertSpaces": true,
+        "indentSize": 4,
+        "defaultEOL": "CRLF",
+        "trimAutoWhitespace": true
+    },
+    "viewState": {
+        "cursorState": [
+            {
+                "inSelectionMode": false,
+                "selectionStart": {
+                    "lineNumber": 547,
+                    "column": 1
+                },
+                "position": {
+                    "lineNumber": 547,
+                    "column": 1
+                }
+            }
+        ],
+        "viewState": {
+            "scrollLeft": 0,
+            "firstPosition": {
+                "lineNumber": 530,
+                "column": 1
+            },
+            "firstPositionDeltaTop": -18
+        },
+        "contributionsState": {
+            "editor.contrib.folding": {},
+            "editor.contrib.wordHighlighter": false
+        }
+    },
+    "contexts": [
+        {
+            "state": {
+                "start": 1,
+                "end": 1,
+                "language": "mysql",
+                "result": {
+                    "type": "resultIds",
+                    "list": [
+                        "d4ad0011-a4ce-448d-d3f7-6dc13f8642ca",
+                        "2c2927ec-8190-4783-87ea-11b1598233fc",
+                        "02be053c-05a9-435d-86aa-21be13f85e93",
+                        "1aef3d0d-3639-4093-b6ee-d3ded2d30d75",
+                        "c6dc66f7-97f2-4e5c-b9e1-08e850a120e3",
+                        "6104616e-9c6c-4826-b857-2e2fad184179",
+                        "e8f9ea7f-535d-4d60-ef33-da9d813ad18d",
+                        "cb4de35a-c173-41d7-f692-f366dc96d95c",
+                        "dd3120d8-6fc0-4539-a883-40c6aa072be8"
+                    ]
+                },
+                "currentHeight": 141.046875,
+                "currentSet": 9,
+                "statements": [
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 0,
+                            "length": 0
+                        },
+                        "contentStart": 1,
+                        "state": 0
+                    }
+                ]
+            },
+            "data": [
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "d4ad0011-a4ce-448d-d3f7-6dc13f8642ca",
+                    "rows": [
+                        {
+                            "0": "ICB-SAV-1001",
+                            "1": "50000.00"
+                        },
+                        {
+                            "0": "ICB-SAV-1002",
+                            "1": "20000.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "account_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "balance",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 2 records retrieved in 0.311ms"
+                    },
+                    "totalRowCount": 2,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 39,
+                    "sql": "\n\n-- Demo\nSELECT account_number, balance\nFROM accounts\nWHERE account_id IN (\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332'\n)\nORDER BY account_number",
+                    "updatable": false,
+                    "fullTableName": "accounts"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "2c2927ec-8190-4783-87ea-11b1598233fc",
+                    "rows": [
+                        {
+                            "0": "6c8bcc76-bc18-11f1-bdd0-30c5991318a6"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "generated_transaction_id",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.316ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 41,
+                    "sql": "\n\nSELECT @transaction_id AS generated_transaction_id",
+                    "updatable": false,
+                    "fullTableName": ""
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "02be053c-05a9-435d-86aa-21be13f85e93",
+                    "rows": [
+                        {
+                            "0": "ICB-SAV-1001",
+                            "1": "45000.00"
+                        },
+                        {
+                            "0": "ICB-SAV-1002",
+                            "1": "25000.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "account_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "balance",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 2 records retrieved in 0.303ms"
+                    },
+                    "totalRowCount": 2,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 42,
+                    "sql": "\n\nSELECT account_number, balance\nFROM accounts\nWHERE account_id IN (\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332'\n)\nORDER BY account_number",
+                    "updatable": false,
+                    "fullTableName": "accounts"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "1aef3d0d-3639-4093-b6ee-d3ded2d30d75",
+                    "rows": [
+                        {
+                            "0": "OPEN-A1001",
+                            "1": "deposit",
+                            "2": "50000.00",
+                            "3": "completed"
+                        },
+                        {
+                            "0": "OPEN-A1002",
+                            "1": "deposit",
+                            "2": "20000.00",
+                            "3": "completed"
+                        },
+                        {
+                            "0": "TXN-6C8BCC76",
+                            "1": "transfer",
+                            "2": "5000.00",
+                            "3": "completed"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "reference_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "type",
+                            "field": "1",
+                            "dataType": {
+                                "type": 43,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "amount",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "status",
+                            "field": "3",
+                            "dataType": {
+                                "type": 43,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 3 records retrieved in 0.288ms"
+                    },
+                    "totalRowCount": 3,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 43,
+                    "sql": "\n\nSELECT reference_number, type, amount, status\nFROM transactions\nORDER BY created_at DESC\nLIMIT 3",
+                    "updatable": false,
+                    "fullTableName": "transactions"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "c6dc66f7-97f2-4e5c-b9e1-08e850a120e3",
+                    "rows": [
+                        {
+                            "0": "33333333-3333-3333-3333-333333333331",
+                            "1": "50000.00",
+                            "2": "45000.00",
+                            "3": "-5000.00"
+                        },
+                        {
+                            "0": "33333333-3333-3333-3333-333333333332",
+                            "1": "20000.00",
+                            "2": "25000.00",
+                            "3": "5000.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "account_id",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "old_balance",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "new_balance",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "delta_amount",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 2 records retrieved in 0.268ms"
+                    },
+                    "totalRowCount": 2,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 44,
+                    "sql": "\n\nSELECT account_id, old_balance, new_balance, delta_amount\nFROM account_audit_log\nORDER BY audit_id",
+                    "updatable": false,
+                    "fullTableName": "account_audit_log"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "6104616e-9c6c-4826-b857-2e2fad184179",
+                    "rows": [
+                        {
+                            "0": "44444444-4444-4444-4444-444444444441",
+                            "1": "active",
+                            "2": "120000.00",
+                            "3": "0.1200",
+                            "4": 12,
+                            "5": "11111111-1111-1111-1111-111111111113"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "loan_id",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": true,
+                            "nullable": false,
+                            "autoIncrement": false,
+                            "default": "uuid()"
+                        },
+                        {
+                            "title": "status",
+                            "field": "1",
+                            "dataType": {
+                                "type": 43,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": true,
+                            "autoIncrement": false,
+                            "default": null
+                        },
+                        {
+                            "title": "principal_amount",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "annual_interest_rate",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "term_months",
+                            "field": "4",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "officer_id",
+                            "field": "5",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false,
+                            "default": "pending"
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.259ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 46,
+                    "sql": "\n\nSELECT loan_id, status, principal_amount, annual_interest_rate, term_months, officer_id\nFROM loans\nWHERE loan_id = '44444444-4444-4444-4444-444444444441'",
+                    "updatable": true,
+                    "fullTableName": "loans"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "e8f9ea7f-535d-4d60-ef33-da9d813ad18d",
+                    "rows": [
+                        {
+                            "0": 1,
+                            "1": "2026-10-29",
+                            "2": "9461.85",
+                            "3": "1200.00",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 2,
+                            "1": "2026-11-29",
+                            "2": "9556.47",
+                            "3": "1105.38",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 3,
+                            "1": "2026-12-29",
+                            "2": "9652.03",
+                            "3": "1009.82",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 4,
+                            "1": "2027-01-29",
+                            "2": "9748.55",
+                            "3": "913.30",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 5,
+                            "1": "2027-02-28",
+                            "2": "9846.04",
+                            "3": "815.81",
+                            "4": "10661.85",
+                            "5": 0
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "installment_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "due_date",
+                            "field": "1",
+                            "dataType": {
+                                "type": 27,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "principal_due",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "interest_due",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_due",
+                            "field": "4",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "is_settled",
+                            "field": "5",
+                            "dataType": {
+                                "type": 42,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 5 records retrieved in 0.308ms"
+                    },
+                    "totalRowCount": 5,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 47,
+                    "sql": "\n\nSELECT installment_number, due_date, principal_due, interest_due, total_due, is_settled\nFROM loan_repayments\nWHERE loan_id = '44444444-4444-4444-4444-444444444441'\nORDER BY installment_number\nLIMIT 5",
+                    "updatable": false,
+                    "fullTableName": "loan_repayments"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "cb4de35a-c173-41d7-f692-f366dc96d95c",
+                    "rows": [
+                        {
+                            "0": "3",
+                            "1": "70000.00",
+                            "2": "23333.333333",
+                            "3": "120000.00",
+                            "4": "0.00",
+                            "5": 0,
+                            "6": "0.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "total_active_accounts",
+                            "field": "0",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "aggregate_deposits",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "average_account_balance",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_active_loan_exposure",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_defaulted_exposure",
+                            "field": "4",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "pending_loan_applications",
+                            "field": "5",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "non_performing_loan_ratio_percentage",
+                            "field": "6",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.702ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 48,
+                    "sql": "\n\nSELECT * FROM vw_executive_portfolio_summary",
+                    "updatable": false,
+                    "fullTableName": "vw_executive_portfolio_summary"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "dd3120d8-6fc0-4539-a883-40c6aa072be8",
+                    "rows": [
+                        {
+                            "0": "Riya Sharma",
+                            "1": 1,
+                            "2": "1",
+                            "3": "0",
+                            "4": "120000.00",
+                            "5": "0.12000000"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "officer_name",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_processed_loans",
+                            "field": "1",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "approved_loans",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "rejected_loans",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_approved_capital",
+                            "field": "4",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "average_approved_rate",
+                            "field": "5",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.643ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 49,
+                    "sql": "\n\nSELECT officer_name, total_processed_loans, approved_loans, rejected_loans,\n       total_approved_capital, average_approved_rate\nFROM vw_officer_loan_performance",
+                    "updatable": false,
+                    "fullTableName": "vw_officer_loan_performance"
+                }
+            ]
+        },
+        {
+            "state": {
+                "start": 2,
+                "end": 547,
+                "language": "mysql",
+                "result": {
+                    "type": "resultIds",
+                    "list": [
+                        "e4702107-7c12-40c4-f570-8ee770a4ee1e",
+                        "6f5d3d44-35f9-44ad-f799-014366d12057",
+                        "dfb863d0-2ccc-461e-f0c0-f7f93777e63a",
+                        "aa3c99b5-c675-4c6a-e958-ab446554ed1a",
+                        "88544fd7-f7b2-43af-e5ce-1453c89c8ce6",
+                        "8be5b16a-b7bd-408f-b78a-ba6cc0df9911",
+                        "c7c68999-1ae7-4f3b-d4de-9ffc266ed7c5",
+                        "afed8546-5b70-4b39-a97c-3d52d4571b35",
+                        "98a90948-a8fd-4435-f5e2-e923f67580be"
+                    ]
+                },
+                "currentHeight": 351.984375,
+                "currentSet": 6,
+                "statements": [
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 0,
+                            "length": 44
+                        },
+                        "contentStart": 1,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 44,
+                            "length": 86
+                        },
+                        "contentStart": 45,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 130,
+                            "length": 25
+                        },
+                        "contentStart": 131,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 155,
+                            "length": 521
+                        },
+                        "contentStart": 157,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 676,
+                            "length": 176
+                        },
+                        "contentStart": 678,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 852,
+                            "length": 1000
+                        },
+                        "contentStart": 854,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 1852,
+                            "length": 430
+                        },
+                        "contentStart": 1854,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 2282,
+                            "length": 412
+                        },
+                        "contentStart": 2284,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 2694,
+                            "length": 1389
+                        },
+                        "contentStart": 2696,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 4083,
+                            "length": 1158
+                        },
+                        "contentStart": 4085,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 5241,
+                            "length": 404
+                        },
+                        "contentStart": 5243,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 5645,
+                            "length": 849
+                        },
+                        "contentStart": 5647,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 6494,
+                            "length": 513
+                        },
+                        "contentStart": 6496,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7007,
+                            "length": 58
+                        },
+                        "contentStart": 7009,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7065,
+                            "length": 56
+                        },
+                        "contentStart": 7066,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7121,
+                            "length": 60
+                        },
+                        "contentStart": 7122,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7181,
+                            "length": 54
+                        },
+                        "contentStart": 7182,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7235,
+                            "length": 102
+                        },
+                        "contentStart": 7236,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7337,
+                            "length": 70
+                        },
+                        "contentStart": 7338,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7407,
+                            "length": 70
+                        },
+                        "contentStart": 7408,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7477,
+                            "length": 93
+                        },
+                        "contentStart": 7478,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 7570,
+                            "length": 87
+                        },
+                        "contentStart": 7571,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": "$$",
+                        "span": {
+                            "start": 7657,
+                            "length": 14
+                        },
+                        "contentStart": 7659,
+                        "state": 4
+                    },
+                    {
+                        "delimiter": "$$",
+                        "span": {
+                            "start": 7671,
+                            "length": 279
+                        },
+                        "contentStart": 7673,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": "$$",
+                        "span": {
+                            "start": 7950,
+                            "length": 426
+                        },
+                        "contentStart": 7952,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": "$$",
+                        "span": {
+                            "start": 8376,
+                            "length": 3044
+                        },
+                        "contentStart": 8378,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": "$$",
+                        "span": {
+                            "start": 11420,
+                            "length": 2661
+                        },
+                        "contentStart": 11422,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": "$$",
+                        "span": {
+                            "start": 14081,
+                            "length": 1155
+                        },
+                        "contentStart": 14083,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 15236,
+                            "length": 13
+                        },
+                        "contentStart": 15238,
+                        "state": 4
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 15249,
+                            "length": 949
+                        },
+                        "contentStart": 15251,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 16198,
+                            "length": 759
+                        },
+                        "contentStart": 16200,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 16957,
+                            "length": 525
+                        },
+                        "contentStart": 16959,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 17482,
+                            "length": 220
+                        },
+                        "contentStart": 17484,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 17702,
+                            "length": 612
+                        },
+                        "contentStart": 17704,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 18314,
+                            "length": 171
+                        },
+                        "contentStart": 18316,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 18485,
+                            "length": 263
+                        },
+                        "contentStart": 18487,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 18748,
+                            "length": 428
+                        },
+                        "contentStart": 18750,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 19176,
+                            "length": 321
+                        },
+                        "contentStart": 19178,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 19497,
+                            "length": 155
+                        },
+                        "contentStart": 19499,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 19652,
+                            "length": 190
+                        },
+                        "contentStart": 19662,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 19842,
+                            "length": 170
+                        },
+                        "contentStart": 19844,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20012,
+                            "length": 53
+                        },
+                        "contentStart": 20014,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20065,
+                            "length": 182
+                        },
+                        "contentStart": 20067,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20247,
+                            "length": 99
+                        },
+                        "contentStart": 20249,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20346,
+                            "length": 101
+                        },
+                        "contentStart": 20348,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20447,
+                            "length": 163
+                        },
+                        "contentStart": 20449,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20610,
+                            "length": 156
+                        },
+                        "contentStart": 20612,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20766,
+                            "length": 202
+                        },
+                        "contentStart": 20768,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 20968,
+                            "length": 47
+                        },
+                        "contentStart": 20970,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 21015,
+                            "length": 164
+                        },
+                        "contentStart": 21017,
+                        "state": 0
+                    },
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 21179,
+                            "length": 1
+                        },
+                        "contentStart": 21178,
+                        "state": 3
+                    }
+                ]
+            },
+            "data": [
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "e4702107-7c12-40c4-f570-8ee770a4ee1e",
+                    "rows": [
+                        {
+                            "0": "ICB-SAV-1001",
+                            "1": "50000.00"
+                        },
+                        {
+                            "0": "ICB-SAV-1002",
+                            "1": "20000.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "account_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "balance",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 2 records retrieved in 0.522ms"
+                    },
+                    "totalRowCount": 2,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 39,
+                    "sql": "\n\n-- Demo\nSELECT account_number, balance\nFROM accounts\nWHERE account_id IN (\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332'\n)\nORDER BY account_number",
+                    "updatable": false,
+                    "fullTableName": "accounts"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "6f5d3d44-35f9-44ad-f799-014366d12057",
+                    "rows": [
+                        {
+                            "0": "bb2c9d34-bc18-11f1-bdd0-30c5991318a6"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "generated_transaction_id",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.347ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 41,
+                    "sql": "\n\nSELECT @transaction_id AS generated_transaction_id",
+                    "updatable": false,
+                    "fullTableName": ""
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "dfb863d0-2ccc-461e-f0c0-f7f93777e63a",
+                    "rows": [
+                        {
+                            "0": "ICB-SAV-1001",
+                            "1": "45000.00"
+                        },
+                        {
+                            "0": "ICB-SAV-1002",
+                            "1": "25000.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "account_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "balance",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 2 records retrieved in 0.472ms"
+                    },
+                    "totalRowCount": 2,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 42,
+                    "sql": "\n\nSELECT account_number, balance\nFROM accounts\nWHERE account_id IN (\n    '33333333-3333-3333-3333-333333333331',\n    '33333333-3333-3333-3333-333333333332'\n)\nORDER BY account_number",
+                    "updatable": false,
+                    "fullTableName": "accounts"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "aa3c99b5-c675-4c6a-e958-ab446554ed1a",
+                    "rows": [
+                        {
+                            "0": "OPEN-A1001",
+                            "1": "deposit",
+                            "2": "50000.00",
+                            "3": "completed"
+                        },
+                        {
+                            "0": "OPEN-A1002",
+                            "1": "deposit",
+                            "2": "20000.00",
+                            "3": "completed"
+                        },
+                        {
+                            "0": "TXN-BB2C9D34",
+                            "1": "transfer",
+                            "2": "5000.00",
+                            "3": "completed"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "reference_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "type",
+                            "field": "1",
+                            "dataType": {
+                                "type": 43,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "amount",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "status",
+                            "field": "3",
+                            "dataType": {
+                                "type": 43,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 3 records retrieved in 0.361ms"
+                    },
+                    "totalRowCount": 3,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 43,
+                    "sql": "\n\nSELECT reference_number, type, amount, status\nFROM transactions\nORDER BY created_at DESC\nLIMIT 3",
+                    "updatable": false,
+                    "fullTableName": "transactions"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "88544fd7-f7b2-43af-e5ce-1453c89c8ce6",
+                    "rows": [
+                        {
+                            "0": "33333333-3333-3333-3333-333333333331",
+                            "1": "50000.00",
+                            "2": "45000.00",
+                            "3": "-5000.00"
+                        },
+                        {
+                            "0": "33333333-3333-3333-3333-333333333332",
+                            "1": "20000.00",
+                            "2": "25000.00",
+                            "3": "5000.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "account_id",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "old_balance",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "new_balance",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "delta_amount",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 2 records retrieved in 0.281ms"
+                    },
+                    "totalRowCount": 2,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 44,
+                    "sql": "\n\nSELECT account_id, old_balance, new_balance, delta_amount\nFROM account_audit_log\nORDER BY audit_id",
+                    "updatable": false,
+                    "fullTableName": "account_audit_log"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "8be5b16a-b7bd-408f-b78a-ba6cc0df9911",
+                    "rows": [
+                        {
+                            "0": "44444444-4444-4444-4444-444444444441",
+                            "1": "active",
+                            "2": "120000.00",
+                            "3": "0.1200",
+                            "4": 12,
+                            "5": "11111111-1111-1111-1111-111111111113"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "loan_id",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": true,
+                            "nullable": false,
+                            "autoIncrement": false,
+                            "default": "uuid()"
+                        },
+                        {
+                            "title": "status",
+                            "field": "1",
+                            "dataType": {
+                                "type": 43,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": true,
+                            "autoIncrement": false,
+                            "default": null
+                        },
+                        {
+                            "title": "principal_amount",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "annual_interest_rate",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "term_months",
+                            "field": "4",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "officer_id",
+                            "field": "5",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false,
+                            "default": "pending"
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.285ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 46,
+                    "sql": "\n\nSELECT loan_id, status, principal_amount, annual_interest_rate, term_months, officer_id\nFROM loans\nWHERE loan_id = '44444444-4444-4444-4444-444444444441'",
+                    "updatable": true,
+                    "fullTableName": "loans"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "c7c68999-1ae7-4f3b-d4de-9ffc266ed7c5",
+                    "rows": [
+                        {
+                            "0": 1,
+                            "1": "2026-10-29",
+                            "2": "9461.85",
+                            "3": "1200.00",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 2,
+                            "1": "2026-11-29",
+                            "2": "9556.47",
+                            "3": "1105.38",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 3,
+                            "1": "2026-12-29",
+                            "2": "9652.03",
+                            "3": "1009.82",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 4,
+                            "1": "2027-01-29",
+                            "2": "9748.55",
+                            "3": "913.30",
+                            "4": "10661.85",
+                            "5": 0
+                        },
+                        {
+                            "0": 5,
+                            "1": "2027-02-28",
+                            "2": "9846.04",
+                            "3": "815.81",
+                            "4": "10661.85",
+                            "5": 0
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "installment_number",
+                            "field": "0",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "due_date",
+                            "field": "1",
+                            "dataType": {
+                                "type": 27,
+                                "needsQuotes": true
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "principal_due",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "interest_due",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_due",
+                            "field": "4",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "is_settled",
+                            "field": "5",
+                            "dataType": {
+                                "type": 42,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 5 records retrieved in 0.352ms"
+                    },
+                    "totalRowCount": 5,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 47,
+                    "sql": "\n\nSELECT installment_number, due_date, principal_due, interest_due, total_due, is_settled\nFROM loan_repayments\nWHERE loan_id = '44444444-4444-4444-4444-444444444441'\nORDER BY installment_number\nLIMIT 5",
+                    "updatable": false,
+                    "fullTableName": "loan_repayments"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "afed8546-5b70-4b39-a97c-3d52d4571b35",
+                    "rows": [
+                        {
+                            "0": "3",
+                            "1": "70000.00",
+                            "2": "23333.333333",
+                            "3": "120000.00",
+                            "4": "0.00",
+                            "5": 0,
+                            "6": "0.00"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "total_active_accounts",
+                            "field": "0",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "aggregate_deposits",
+                            "field": "1",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "average_account_balance",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_active_loan_exposure",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_defaulted_exposure",
+                            "field": "4",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "pending_loan_applications",
+                            "field": "5",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "non_performing_loan_ratio_percentage",
+                            "field": "6",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 1.085ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 48,
+                    "sql": "\n\nSELECT * FROM vw_executive_portfolio_summary",
+                    "updatable": false,
+                    "fullTableName": "vw_executive_portfolio_summary"
+                },
+                {
+                    "tabId": "79fb13d0-e28f-469a-9bfc-07ac8de953de",
+                    "resultId": "98a90948-a8fd-4435-f5e2-e923f67580be",
+                    "rows": [
+                        {
+                            "0": "Riya Sharma",
+                            "1": 1,
+                            "2": "1",
+                            "3": "0",
+                            "4": "120000.00",
+                            "5": "0.12000000"
+                        }
+                    ],
+                    "columns": [
+                        {
+                            "title": "officer_name",
+                            "field": "0",
+                            "dataType": {
+                                "type": 17,
+                                "characterMaximumLength": 65535,
+                                "flags": [
+                                    "BINARY",
+                                    "ASCII",
+                                    "UNICODE"
+                                ],
+                                "needsQuotes": true,
+                                "parameterFormatType": "OneOrZero"
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_processed_loans",
+                            "field": "1",
+                            "dataType": {
+                                "type": 4,
+                                "flags": [
+                                    "SIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 10,
+                                "parameterFormatType": "OneOrZero",
+                                "synonyms": [
+                                    "INTEGER",
+                                    "INT4"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "approved_loans",
+                            "field": "2",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "rejected_loans",
+                            "field": "3",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "total_approved_capital",
+                            "field": "4",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        },
+                        {
+                            "title": "average_approved_rate",
+                            "field": "5",
+                            "dataType": {
+                                "type": 10,
+                                "flags": [
+                                    "UNSIGNED",
+                                    "ZEROFILL"
+                                ],
+                                "numericPrecision": 65,
+                                "numericScale": 30,
+                                "parameterFormatType": "TwoOrOneOrZero",
+                                "synonyms": [
+                                    "FIXED",
+                                    "NUMERIC",
+                                    "DEC"
+                                ]
+                            },
+                            "inPK": false,
+                            "nullable": false,
+                            "autoIncrement": false
+                        }
+                    ],
+                    "executionInfo": {
+                        "text": "OK, 1 record retrieved in 0.688ms"
+                    },
+                    "totalRowCount": 1,
+                    "hasMoreRows": false,
+                    "currentPage": 0,
+                    "index": 49,
+                    "sql": "\n\nSELECT officer_name, total_processed_loans, approved_loans, rejected_loans,\n       total_approved_capital, average_approved_rate\nFROM vw_officer_loan_performance",
+                    "updatable": false,
+                    "fullTableName": "vw_officer_loan_performance"
+                }
+            ]
+        },
+        {
+            "state": {
+                "start": 548,
+                "end": 548,
+                "language": "mysql",
+                "currentSet": 1,
+                "statements": [
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 0,
+                            "length": 0
+                        },
+                        "contentStart": 0,
+                        "state": 0
+                    }
+                ]
+            },
+            "data": []
+        },
+        {
+            "state": {
+                "start": 549,
+                "end": 549,
+                "language": "mysql",
+                "currentSet": 1,
+                "statements": [
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 0,
+                            "length": 0
+                        },
+                        "contentStart": 0,
+                        "state": 0
+                    }
+                ]
+            },
+            "data": []
+        },
+        {
+            "state": {
+                "start": 550,
+                "end": 550,
+                "language": "mysql",
+                "currentSet": 1,
+                "statements": [
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 0,
+                            "length": 0
+                        },
+                        "contentStart": 0,
+                        "state": 0
+                    }
+                ]
+            },
+            "data": []
+        },
+        {
+            "state": {
+                "start": 551,
+                "end": 551,
+                "language": "mysql",
+                "currentSet": 1,
+                "statements": [
+                    {
+                        "delimiter": ";",
+                        "span": {
+                            "start": 0,
+                            "length": 0
+                        },
+                        "contentStart": 0,
+                        "state": 0
+                    }
+                ]
+            },
+            "data": []
+        }
+    ]
+}
