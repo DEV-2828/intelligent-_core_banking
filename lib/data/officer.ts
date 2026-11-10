@@ -10,12 +10,12 @@ export async function getOfficerDashboard(officerId: string) {
     FROM loans l
     JOIN users u ON u.user_id=l.borrower_id
     LEFT JOIN collateral c ON c.loan_id=l.loan_id
-    WHERE l.status IN ('pending','under_review')
+    WHERE l.status IN ('pending','under_review','approved') OR (l.status='active' AND l.disbursed_at IS NULL)
     ORDER BY l.created_at ASC`);
 
   const enriched = await Promise.all(applications.map(async (loan) => ({
     ...loan,
-    risk: await getRiskMetrics(loan.mongodb_credit_profile_id),
+    risk: loan.assessment_snapshot ? (typeof loan.assessment_snapshot === "string" ? JSON.parse(loan.assessment_snapshot) : loan.assessment_snapshot) as import("@/lib/types").RiskMetrics : await getRiskMetrics(loan.mongodb_credit_profile_id),
   })));
 
   const [performance] = await db.query<RowDataPacket[]>(`

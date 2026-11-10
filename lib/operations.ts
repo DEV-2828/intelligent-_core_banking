@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PoolConnection,RowDataPacket } from "mysql2/promise";
 import { db } from "@/lib/mysql";
-export class BankingError extends Error { constructor(message:string,public status=400){super(message);} }
+export class BankingError extends Error { status:number; constructor(message:string,status=400){super(message);this.status=status;} }
 export async function withOperation<T extends object>(actorId:string,key:string,operation:string,input:unknown,action:(connection:PoolConnection)=>Promise<T>):Promise<T> {
  if(!/^[A-Za-z0-9_-]{8,64}$/.test(key))throw new BankingError("A valid Idempotency-Key is required");
  const hash=createHash("sha256").update(JSON.stringify(input)).digest("hex");

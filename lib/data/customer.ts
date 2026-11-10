@@ -70,7 +70,7 @@ export async function getCustomerLoans(userId: string) {
   const result = await Promise.all(loans.map(async (loan) => ({
     ...loan,
     repayments: grouped.get(loan.loan_id) ?? [],
-    risk: await getRiskMetrics(loan.mongodb_credit_profile_id),
+    risk: loan.assessment_snapshot ? (typeof loan.assessment_snapshot === "string" ? JSON.parse(loan.assessment_snapshot) : loan.assessment_snapshot) : await getRiskMetrics(loan.mongodb_credit_profile_id),
   })));
   return result;
 }

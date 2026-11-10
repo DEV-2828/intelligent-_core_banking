@@ -1,4 +1,5 @@
 "use client";
+import {useRequestKey} from "@/components/use-request-key";
 import { errorMessage } from "@/lib/errors";
 import { postJson } from "@/lib/http-client";
 
@@ -10,6 +11,7 @@ import { ArrowRight, Loader2, ShieldCheck } from "lucide-react";
 import { formatCurrency, maskAccount } from "@/lib/format";
 
 export function TransferForm({ accounts, beneficiaries }: { accounts: TransferAccount[]; beneficiaries: Beneficiary[] }) {
+  const {keyFor,complete}=useRequestKey();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -19,9 +21,9 @@ export function TransferForm({ accounts, beneficiaries }: { accounts: TransferAc
     const form = new FormData(element);
     try {
     const body = { sourceAccountId: form.get("source"), destinationAccountId: form.get("destination"), amount: Number(form.get("amount")), description: form.get("description") };
-    const data = await postJson<{ transactionId: string }>("/api/transfers", body); setLoading(false);
+    const data = await postJson<{ transactionId: string }>("/api/transfers", body, keyFor(body)); setLoading(false);
     setMessage({ ok: true, text: `Transfer completed • ${data.transactionId?.slice(0, 8).toUpperCase()}` });
-    element.reset(); router.refresh();
+    complete(); element.reset(); router.refresh();
     } catch (error) { setMessage({ ok: false, text: errorMessage(error) }); } finally { setLoading(false); }
   }
   return <form onSubmit={submit} className="space-y-5">

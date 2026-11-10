@@ -22,5 +22,6 @@ export async function getAdminDashboard() {
            CONCAT(u.first_name,' ',u.last_name) customer_name
     FROM accounts a JOIN users u ON u.user_id=a.user_id
     WHERE u.role='customer' ORDER BY a.updated_at DESC LIMIT 10`);
-  return { summary: summaryRows[0], txTrend, loanDistribution, audit, accounts };
+  const [sync]=await db.query<RowDataPacket[]>("SELECT COUNT(*) pending FROM loan_sync_events WHERE delivered_at IS NULL");
+  return { pendingSync:Number(sync[0].pending), summary: summaryRows[0], txTrend, loanDistribution, audit, accounts };
 }

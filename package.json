@@ -11,7 +11,8 @@
     "mongo:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-mongodb.ps1",
     "db:check": "node --env-file=.env.local scripts/check-databases.mjs",
     "db:setup:mongo": "node --env-file=.env.local scripts/setup-mongo.mjs",
-    "db:migrate": "node --env-file=.env.local scripts/migrate-mysql.mjs"
+    "db:migrate": "node --env-file=.env.local scripts/migrate-mysql.mjs",
+    "sync:loans": "node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types scripts/sync-loans.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
