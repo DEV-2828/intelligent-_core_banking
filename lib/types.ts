@@ -30,6 +30,7 @@ export type LoanRow = import("mysql2").RowDataPacket & {
   loan_id: string; borrower_id: string; officer_id: string | null;
   mongodb_credit_profile_id: string; principal_amount: number;
   annual_interest_rate: number; term_months: number; purpose: string;
+  outstanding_principal: number; overdue_amount: number; days_overdue: number;
   disbursed_at: string | null; assessment_snapshot: RiskMetrics | string | null;
   status: string; created_at: string; updated_at: string; officer_name?: string;
 };

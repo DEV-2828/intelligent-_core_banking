@@ -34,7 +34,7 @@ export async function getCustomerOverview(userId: string) {
     SELECT l.*, (SELECT COUNT(*) FROM loan_repayments r WHERE r.loan_id=l.loan_id AND r.is_settled=0) remaining_installments,
       (SELECT MIN(due_date) FROM loan_repayments r WHERE r.loan_id=l.loan_id AND r.is_settled=0) next_due_date,
       (SELECT total_due FROM loan_repayments r WHERE r.loan_id=l.loan_id AND r.is_settled=0 ORDER BY installment_number LIMIT 1) next_due_amount
-    FROM loans l WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
+    FROM vw_loan_positions l WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
 
   const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
   return { accounts, transactions, trend, loans: loanRows, totalBalance };
@@ -57,7 +57,7 @@ export async function getCustomerTransferData(userId: string) {
 export async function getCustomerLoans(userId: string) {
   const [loans] = await db.query<LoanRow[]>(`
     SELECT l.*, CONCAT(o.first_name,' ',o.last_name) officer_name
-    FROM loans l LEFT JOIN users o ON o.user_id=l.officer_id
+    FROM vw_loan_positions l LEFT JOIN users o ON o.user_id=l.officer_id
     WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
 
   const [repayments] = await db.query<RepaymentRow[]>(`
