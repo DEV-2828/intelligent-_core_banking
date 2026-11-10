@@ -16,9 +16,11 @@ export type RiskMetrics = {
   underwritingStatus: string;
   bureauScore: number;
   delinquencies: number;
-  dscr: number;
+  dscr: number | null;
   ocfMargin: number;
-  currentRatio: number;
+  currentRatio: number | null;
+  modelVersion: string;
+  assessedAt: string;
   riskScore: number;
   riskTier: "LOW" | "MODERATE" | "HIGH" | "VERY_HIGH";
 };
