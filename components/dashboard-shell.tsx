@@ -10,6 +10,7 @@ const nav = {
   customer: [
     { href: "/dashboard/customer", label: "Overview", icon: LayoutDashboard },
     { href: "/dashboard/customer/transfer", label: "Payments", icon: WalletCards },
+    { href: "/dashboard/customer/financials", label: "Financial profile", icon: Landmark },
     { href: "/dashboard/customer/loans", label: "Credit & loans", icon: Landmark },
   ],
   loan_officer: [

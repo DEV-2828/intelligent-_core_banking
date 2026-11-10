@@ -5,7 +5,8 @@ New-Item -ItemType Directory -Force -Path $localRoot | Out-Null
 $binary = Get-ChildItem -LiteralPath $localRoot -Filter mongod.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $binary) {
   $archive = Join-Path $localRoot 'mongodb.zip'
-  Invoke-WebRequest 'https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-8.0.25.zip' -OutFile $archive
+  & curl.exe --fail --location --retry 2 --continue-at - --output $archive 'https://fastdl.mongodb.org/windows/mongodb-windows-x86_64-8.0.25.zip'
+  if ($LASTEXITCODE -ne 0) { throw 'MongoDB download failed; rerun to resume.' }
   Expand-Archive -LiteralPath $archive -DestinationPath $localRoot -Force
   $binary = Get-ChildItem -LiteralPath $localRoot -Filter mongod.exe -Recurse | Select-Object -First 1
 }

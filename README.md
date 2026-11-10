@@ -71,10 +71,14 @@ If you **already imported the older SQL file**, you can instead run `database/up
 From a terminal:
 
 ```bash
-mongosh < credit_risk_mongodb.js
+npm run mongo:start       # Windows: local-only MongoDB, first run downloads the server
+npm run db:setup:mongo    # validators, indexes, and missing demo profiles
+npm run db:check
 ```
 
-The Mongo database is named `credit_risk_engine`.
+The Mongo database is named `credit_risk_engine`. The setup preserves existing profiles. On other operating systems, run an existing MongoDB instance and skip `mongo:start`. Local binaries and data stay in ignored `.local/`.
+
+Customers maintain four consecutive quarterly statements from **Financial profile**. The versioned academic TTM model rejects stale, incomplete, duplicate and invalid statements. Current ratio uses current assets, and zero debt/liabilities are displayed explicitly. No real bureau connection is claimed.
 
 ## 3. Configure the web application
 
