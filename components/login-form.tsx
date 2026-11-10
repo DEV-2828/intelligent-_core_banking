@@ -1,4 +1,7 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
+import { postJson } from "@/lib/http-client";
+
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -13,13 +16,14 @@ export function LoginForm() {
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true); setError("");
-    const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: form.get("email"), password: form.get("password") }) });
-    const data = await res.json();
+    const element = e.currentTarget;
+    const form = new FormData(element);
+    try {
+    const data = await postJson<{ redirectTo: string }>("/api/auth/login", { email: form.get("email"), password: form.get("password") });
     setLoading(false);
-    if (!res.ok) return setError(data.error ?? "Unable to sign in");
     router.replace(data.redirectTo);
     router.refresh();
+    } catch (error) { setError(errorMessage(error)); } finally { setLoading(false); }
   }
 
   return (

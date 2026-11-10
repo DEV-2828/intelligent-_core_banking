@@ -1,4 +1,7 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
+import { postJson } from "@/lib/http-client";
+
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -10,12 +13,13 @@ export function LoanApplicationForm() {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setLoading(true); setMessage(null);
-    const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/loans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: Number(form.get("amount")), termMonths: Number(form.get("term")), purpose: form.get("purpose") }) });
-    const data = await res.json(); setLoading(false);
-    if (!res.ok) return setMessage({ ok: false, text: data.error ?? "Application failed" });
+    const element = e.currentTarget;
+    const form = new FormData(element);
+    try {
+    const data = await postJson<{ riskTier: string; recommendedRate: number }>("/api/loans", { amount: Number(form.get("amount")), termMonths: Number(form.get("term")), purpose: form.get("purpose") }); setLoading(false);
     setMessage({ ok: true, text: `Application created. Provisional risk tier: ${data.riskTier}; recommended rate ${(data.recommendedRate * 100).toFixed(2)}% p.a.` });
-    (e.currentTarget as HTMLFormElement).reset(); router.refresh();
+    element.reset(); router.refresh();
+    } catch (error) { setMessage({ ok: false, text: errorMessage(error) }); } finally { setLoading(false); }
   }
   return <form onSubmit={submit} className="space-y-4">
     <div className="grid gap-4 md:grid-cols-2"><label><span className="mb-2 block text-xs font-semibold text-slate-400">Requested amount</span><input name="amount" type="number" min="10000" step="1000" className="input" placeholder="₹ 500,000" required /></label><label><span className="mb-2 block text-xs font-semibold text-slate-400">Term</span><select name="term" className="input" defaultValue="24"><option value="12">12 months</option><option value="18">18 months</option><option value="24">24 months</option><option value="36">36 months</option><option value="48">48 months</option></select></label></div>

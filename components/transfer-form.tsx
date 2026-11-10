@@ -1,4 +1,7 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
+import { postJson } from "@/lib/http-client";
+
 
 import type { TransferAccount, Beneficiary } from "@/lib/types";
 import { useState } from "react";
@@ -12,13 +15,14 @@ export function TransferForm({ accounts, beneficiaries }: { accounts: TransferAc
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault(); setLoading(true); setMessage(null);
-    const form = new FormData(e.currentTarget);
+    const element = e.currentTarget;
+    const form = new FormData(element);
+    try {
     const body = { sourceAccountId: form.get("source"), destinationAccountId: form.get("destination"), amount: Number(form.get("amount")), description: form.get("description") };
-    const res = await fetch("/api/transfers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const data = await res.json(); setLoading(false);
-    if (!res.ok) return setMessage({ ok: false, text: data.error ?? "Transfer failed" });
+    const data = await postJson<{ transactionId: string }>("/api/transfers", body); setLoading(false);
     setMessage({ ok: true, text: `Transfer completed • ${data.transactionId?.slice(0, 8).toUpperCase()}` });
-    (e.currentTarget as HTMLFormElement).reset(); router.refresh();
+    element.reset(); router.refresh();
+    } catch (error) { setMessage({ ok: false, text: errorMessage(error) }); } finally { setLoading(false); }
   }
   return <form onSubmit={submit} className="space-y-5">
     <div className="grid gap-4 md:grid-cols-2">
