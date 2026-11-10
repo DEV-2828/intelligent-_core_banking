@@ -29,3 +29,9 @@ Branch: codex/complete-banking-workflows. Starting point: b391d39.
 Completed locally on 10 November 2026 with Node 24.22.1, Next.js 16.4.3, MySQL and MongoDB 8.0.25. Lint, production build, seven unit tests and twenty HTTP/database integration scenarios pass. The hosted GitHub Actions workflow is configured here; its first hosted run occurs after pushing the branch.
 
 The integration suite checks money conservation, exact-once funding and settlement, transaction/audit rollback after an injected failure, minimum balances under concurrent debits, conflicting officer decisions, native analytics parity and recovery from an unreachable MongoDB delivery endpoint. It also verifies profile repair, payee verification, collateral ownership, all twelve schedule rows, overdue aging and disabled-session access.
+
+## Hosted runner compatibility fix
+
+The initial push and pull-request checks passed lint, unit tests and compilation, then failed during database fixture setup. The MongoDB container refused to start on the new Ubuntu runner kernel (6.19+); fixture cleanup masked the original selection error with a topology-closed exception.
+
+The workflow pins Ubuntu 22.04 (kernel 6.8), checks real TCP SQL readiness and MongoDB ping health, and uses the Node 24 editions of checkout/setup-node. This is a compatibility workaround tracked in [actions/runner-images#15005](https://github.com/actions/runner-images/issues/15005); re-evaluate the runner pin when MongoDB supports the newer kernels. Fixture cleanup only drops a MongoDB database after a successful connection, attempts every remaining cleanup action and preserves the setup failure. A dedicated unreachable-MongoDB regression verifies that no generated SQL database is left behind.

@@ -10,14 +10,25 @@ export async function fixture(){
  const connection=await mysql.createConnection({host:process.env.MYSQL_HOST??"127.0.0.1",port:Number(process.env.MYSQL_PORT??3306),user:process.env.MYSQL_USER??"root",password:process.env.MYSQL_PASSWORD??"",decimalNumbers:true,dateStrings:true});
  await connection.query("CREATE DATABASE "+name+" CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");await connection.changeUser({database:name});
  const client=new MongoClient(process.env.MONGODB_URI??"mongodb://127.0.0.1:27017",{serverSelectionTimeoutMS:3000});
- async function cleanup(){try{await client.db(name).dropDatabase();}finally{await client.close();await connection.query("DROP DATABASE "+name);await connection.end();}}
+ let mongoConnected=false,cleaned=false;
+ async function cleanup(){
+  if(cleaned)return;
+  cleaned=true;
+  const errors=[];
+  const actions=[...(mongoConnected?[()=>client.db(name).dropDatabase()]:[]),()=>client.close(),()=>connection.query("DROP DATABASE "+name),()=>connection.end()];
+  for(const action of actions){try{await action();}catch(error){errors.push(error);}}
+  if(errors.length)throw new AggregateError(errors,"Test fixture cleanup failed");
+ }
  try{
  const base=(await readFile(new URL("../intelligent_core_banking_mysql.sql",import.meta.url),"utf8")).replace(/^DROP DATABASE[^\n]*\r?\n/m,"").replace(/^CREATE DATABASE[^\n]*\r?\n/m,"").replace(/^USE intelligent_core_banking;\r?\n/m,"");
- await runSql(connection,base);await migrate(connection);await migrate(connection);await client.connect();await setupMongo(client.db(name),true);
+ await runSql(connection,base);await migrate(connection);await migrate(connection);await client.connect();mongoConnected=true;await setupMongo(client.db(name),true);
  const now=new Date(),latest=now.getUTCFullYear()*4+Math.floor(now.getUTCMonth()/3)-1;
  for(const profile of await client.db(name).collection("credit_profiles").find({}).toArray()) {const statements=profile.financial_statements.map((q,i)=>{const period=latest-3+i;return {...q,fiscal_year:Math.floor(period/4),fiscal_quarter:period%4+1};});await client.db(name).collection("credit_profiles").updateOne({_id:profile._id},{$set:{financial_statements:statements}});}
  await connection.query("UPDATE users SET password_hash=?",[await bcrypt.hash("TestPassword@123",4)]);
  process.env.MYSQL_DATABASE=name;process.env.MONGODB_DB=name;process.env.BANK_DISBURSEMENT_ACCOUNT_ID=bank;process.env.BANK_REPAYMENT_ACCOUNT_ID=repaymentBank;
  return {name,sql:connection,mongo:client.db(name),cleanup};
- }catch(error){await cleanup();throw error;}
+ }catch(error){
+  try{await cleanup();}catch(cleanupError){throw new AggregateError([error,cleanupError],"Test fixture setup failed and cleanup also reported an error",{cause:error});}
+  throw error;
+ }
 }

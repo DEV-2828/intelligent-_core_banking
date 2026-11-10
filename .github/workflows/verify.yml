@@ -4,7 +4,9 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # mongo:8.0 rejects kernels >= 6.19; ubuntu-22.04 currently uses 6.8.
+    # https://github.com/actions/runner-images/issues/15005
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     services:
       mysql:
@@ -15,7 +17,7 @@ jobs:
         ports:
           - 33306:3306
         options: >-
-          --health-cmd="mysqladmin ping -ptest-root-password"
+          --health-cmd="mysql --protocol=TCP -h127.0.0.1 -uroot -ptest-root-password -e 'SELECT 1'"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=20
@@ -23,6 +25,11 @@ jobs:
         image: mongo:8.0
         ports:
           - 27017:27017
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     env:
       MYSQL_HOST: 127.0.0.1
       MYSQL_PORT: 33306
@@ -33,8 +40,8 @@ jobs:
       MONGODB_DB: credit_risk_engine
       NEXT_TELEMETRY_DISABLED: 1
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm

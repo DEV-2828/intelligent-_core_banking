@@ -92,11 +92,11 @@ Money-changing APIs require an Idempotency-Key header. Reusing a key with the sa
 npm run check
 ```
 
-This runs lint, seven unit tests, a production build and twenty integration scenarios. Integration tests create fresh databases with generated `icb_test_` names, launch a separate Next.js server, call actual authenticated APIs and remove only their generated databases afterward. The MySQL test account needs permission to create and drop these test databases.
+This runs lint, seven unit tests, a production build, twenty lifecycle integration scenarios and a database-startup failure regression. Integration tests create fresh databases with generated `icb_test_` names, launch a separate Next.js server, call actual authenticated APIs and remove only their generated databases afterward. The MySQL test account needs permission to create and drop these test databases.
 
 Coverage includes the complete lending lifecycle, all twelve EMIs, role/origin/ownership checks, disabled sessions, profile revision conflicts and legacy profile repair, payee verification, collateral controls, frozen accounts, insufficient funds, concurrent opposite transfers and double-spend attempts, competing decisions, duplicate disbursements/repayments, injected settlement rollback, MongoDB aggregation parity, an unreachable MongoDB delivery target, outbox replay and overdue reporting. The tests use HTTP and rendered HTML; they do not automate browser clicks.
 
-GitHub Actions runs the same checks with isolated MySQL and MongoDB services. See `docs/IMPLEMENTATION.md` for the scrum breakdown and reviewer notes.
+GitHub Actions runs the same checks with isolated MySQL and MongoDB services on Ubuntu 22.04. Real database health checks run before tests; the runner pin avoids the current MongoDB incompatibility with kernels 6.19 and newer. See `docs/IMPLEMENTATION.md` for the scrum breakdown and reviewer notes.
 
 ## Structure
 
