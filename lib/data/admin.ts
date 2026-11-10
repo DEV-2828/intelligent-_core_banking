@@ -23,5 +23,6 @@ export async function getAdminDashboard() {
     FROM accounts a JOIN users u ON u.user_id=a.user_id
     WHERE u.role='customer' ORDER BY a.updated_at DESC LIMIT 10`);
   const [sync]=await db.query<RowDataPacket[]>("SELECT COUNT(*) pending FROM loan_sync_events WHERE delivered_at IS NULL");
-  return { pendingSync:Number(sync[0].pending), summary: summaryRows[0], txTrend, loanDistribution, audit, accounts };
+  const [pendingBeneficiaries]=await db.query<RowDataPacket[]>("SELECT b.beneficiary_id,b.nickname,a.account_number,CONCAT(u.first_name,' ',u.last_name) customer_name FROM beneficiaries b JOIN accounts a ON a.account_id=b.beneficiary_account_id JOIN users u ON u.user_id=b.user_id WHERE b.is_verified=FALSE ORDER BY b.created_at");
+  return {pendingBeneficiaries, pendingSync:Number(sync[0].pending), summary: summaryRows[0], txTrend, loanDistribution, audit, accounts };
 }
