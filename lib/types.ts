@@ -43,3 +43,5 @@ export type TransferAccount = { account_id: string; account_number: string; bala
 export type Beneficiary = { beneficiary_id: string; account_id: string; account_number: string; nickname: string | null; beneficiary_name: string; is_verified: boolean; };
 
 export type CollateralRow = import("mysql2").RowDataPacket & {collateral_id:string;loan_id:string;collateral_type:string;description:string;estimated_value:number;valuation_date:string;status:string};
+
+export type FinancialProfileDraft = Omit<import("./risk-calculator").FinancialProfile,"financial_statements"> & {financial_statements: (Omit<import("./risk-calculator").Statement,typeof import("./risk-calculator").statementFields[number]> & Record<typeof import("./risk-calculator").statementFields[number],number | null>)[]};

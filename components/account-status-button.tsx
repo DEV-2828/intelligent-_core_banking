@@ -1,4 +1,5 @@
 "use client";
+import {useRequestKey} from "@/components/use-request-key";
 import { postJson } from "@/lib/http-client";
 import { errorMessage } from "@/lib/errors";
 
@@ -7,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Lock, Unlock } from "lucide-react";
 
 export function AccountStatusButton({ accountId, status }: { accountId: string; status: string }) {
-  const router = useRouter(); const [loading, setLoading] = useState(false); const [error, setError] = useState(""); const frozen = status === "frozen";
-  async function toggle() { setLoading(true); setError(""); try { await postJson(`/api/admin/accounts/${accountId}/status`, { status: frozen ? "active" : "frozen" }); router.refresh(); } catch (error) { setError(errorMessage(error)); } finally { setLoading(false); } }
+  const {keyFor,complete}=useRequestKey(); const router = useRouter(); const [loading, setLoading] = useState(false); const [error, setError] = useState(""); const frozen = status === "frozen";
+  async function toggle() { setLoading(true); setError(""); try { await postJson(`/api/admin/accounts/${accountId}/status`, { status: frozen ? "active" : "frozen" }, keyFor({accountId,status})); complete(); router.refresh(); } catch (error) { setError(errorMessage(error)); } finally { setLoading(false); } }
   return <div>{error && <p role="alert" className="text-xs text-rose-300">{error}</p>}<button onClick={toggle} disabled={loading} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${frozen ? "border-emerald-400/15 bg-emerald-400/[.05] text-emerald-300" : "border-rose-400/15 bg-rose-400/[.05] text-rose-300"}`}>{loading ? <Loader2 size={13} className="animate-spin"/> : <span className="flex items-center gap-1.5">{frozen ? <Unlock size={13}/> : <Lock size={13}/>} {frozen ? "Unfreeze" : "Freeze"}</span>}</button></div>;
 }

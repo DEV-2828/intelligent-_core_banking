@@ -7,7 +7,7 @@ import { errorMessage } from "@/lib/errors";
 export async function GET() {
  const user=await getSessionUser(); if(!user||user.role!=="customer") return NextResponse.json({error:"Unauthorized"},{status:401});
  try { const p=await (await mongoDb()).collection("credit_profiles").findOne({borrower_id:user.userId});
- return NextResponse.json(p?{profile:validateFinancialProfile(p),revision:p.revision??0}:{profile:null,revision:0});
+ return NextResponse.json(p?{profile:{legal_name:p.legal_name,tax_identifier:p.tax_identifier,entity_type:p.entity_type,credit_bureau_payload:p.credit_bureau_payload,financial_statements:p.financial_statements.map((q:Record<string,unknown>)=>({fiscal_year:q.fiscal_year,fiscal_quarter:q.fiscal_quarter,...Object.fromEntries(statementFields.map(k=>[k,q[k]===undefined?null:Number(String(q[k]))]))}))},revision:p.revision??0}:{profile:null,revision:0});
  }catch {return NextResponse.json({error:"Credit profile service unavailable"},{status:503});}
 }
 export async function POST(request:Request) {

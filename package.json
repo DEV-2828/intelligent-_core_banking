@@ -13,7 +13,8 @@
     "db:setup:mongo": "node --env-file=.env.local scripts/setup-mongo.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate-mysql.mjs",
     "sync:loans": "node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types scripts/sync-loans.mjs",
-    "test": "node --import ./scripts/register-ts.mjs --experimental-strip-types --test tests/unit.test.mjs"
+    "test": "node --import ./scripts/register-ts.mjs --experimental-strip-types --test tests/unit.test.mjs",
+    "test:integration": "npm run build && node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types --test tests/integration.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
