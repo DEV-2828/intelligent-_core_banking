@@ -14,6 +14,8 @@ export async function fixture(){
  try{
  const base=(await readFile(new URL("../intelligent_core_banking_mysql.sql",import.meta.url),"utf8")).replace(/^DROP DATABASE[^\n]*\r?\n/m,"").replace(/^CREATE DATABASE[^\n]*\r?\n/m,"").replace(/^USE intelligent_core_banking;\r?\n/m,"");
  await runSql(connection,base);await migrate(connection);await migrate(connection);await client.connect();await setupMongo(client.db(name),true);
+ const now=new Date(),latest=now.getUTCFullYear()*4+Math.floor(now.getUTCMonth()/3)-1;
+ for(const profile of await client.db(name).collection("credit_profiles").find({}).toArray()) {const statements=profile.financial_statements.map((q,i)=>{const period=latest-3+i;return {...q,fiscal_year:Math.floor(period/4),fiscal_quarter:period%4+1};});await client.db(name).collection("credit_profiles").updateOne({_id:profile._id},{$set:{financial_statements:statements}});}
  await connection.query("UPDATE users SET password_hash=?",[await bcrypt.hash("TestPassword@123",4)]);
  process.env.MYSQL_DATABASE=name;process.env.MONGODB_DB=name;process.env.BANK_DISBURSEMENT_ACCOUNT_ID=bank;process.env.BANK_REPAYMENT_ACCOUNT_ID=repaymentBank;
  return {name,sql:connection,mongo:client.db(name),cleanup};
