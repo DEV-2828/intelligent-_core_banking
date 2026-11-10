@@ -1,0 +1,1 @@
+ALTER TABLE security_logs MODIFY event_type ENUM('login_success','login_failure','logout','password_change','account_freeze','role_change','account_unfreeze','beneficiary_verified','collateral_verified') NOT NULL;

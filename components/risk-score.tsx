@@ -12,10 +12,10 @@ export function RiskScore({ risk, compact = false }: { risk: RiskMetrics | null;
             <div className="text-center"><div className="text-2xl font-extrabold text-white">{risk.riskScore}</div><div className="text-[10px] uppercase tracking-wider text-slate-500">score</div></div>
           </div>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1"><p className="mb-2 text-[10px] text-slate-500">Academic model · {risk.modelVersion}</p>
           <div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-semibold text-white">{risk.legalName}</h3><Badge value={risk.riskTier} /></div>
           <div className="mt-3 grid grid-cols-3 gap-3 text-center">
-            <Metric label="DSCR" value={risk.dscr.toFixed(2)} />
+            <Metric label="DSCR" value={risk.dscr === null ? "No debt" : risk.dscr.toFixed(2)} />
             <Metric label="Bureau" value={String(risk.bureauScore)} />
             <Metric label="OCF" value={`${risk.ocfMargin.toFixed(1)}%`} />
           </div>

@@ -7,7 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "seed:passwords": "node --env-file=.env.local scripts/seed-demo-passwords.mjs"
+    "seed:passwords": "node --env-file=.env.local scripts/seed-demo-passwords.mjs",
+    "mongo:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-mongodb.ps1",
+    "db:check": "node --env-file=.env.local scripts/check-databases.mjs",
+    "db:setup:mongo": "node --env-file=.env.local scripts/setup-mongo.mjs",
+    "db:migrate": "node --env-file=.env.local scripts/migrate-mysql.mjs",
+    "sync:loans": "node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types scripts/sync-loans.mjs",
+    "test": "node --import ./scripts/register-ts.mjs --experimental-strip-types --test tests/unit.test.mjs",
+    "test:integration": "npm run build && node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types --test --test-concurrency=1 tests/fixture-failure.test.mjs tests/integration.test.mjs",
+    "risk:analyze": "node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types scripts/analyze-risk.mjs",
+    "check": "npm run lint && npm test && npm run test:integration"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -30,5 +39,9 @@
     "postcss": "^8.5.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

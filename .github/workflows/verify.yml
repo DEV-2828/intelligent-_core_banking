@@ -1,0 +1,50 @@
+name: Banking checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    # mongo:8.0 rejects kernels >= 6.19; ubuntu-22.04 currently uses 6.8.
+    # https://github.com/actions/runner-images/issues/15005
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-root-password
+          MYSQL_ROOT_HOST: '%'
+        ports:
+          - 33306:3306
+        options: >-
+          --health-cmd="mysql --protocol=TCP -h127.0.0.1 -uroot -ptest-root-password -e 'SELECT 1'"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      mongo:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 33306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: test-root-password
+      MYSQL_DATABASE: intelligent_core_banking
+      MONGODB_URI: mongodb://127.0.0.1:27017
+      MONGODB_DB: credit_risk_engine
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: cp .env.example .env.local
+      - run: npm run check

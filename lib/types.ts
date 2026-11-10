@@ -16,9 +16,32 @@ export type RiskMetrics = {
   underwritingStatus: string;
   bureauScore: number;
   delinquencies: number;
-  dscr: number;
+  dscr: number | null;
   ocfMargin: number;
-  currentRatio: number;
+  currentRatio: number | null;
+  inputs?: import("./risk-calculator").FinancialProfile;
+  modelVersion: string;
+  assessedAt: string;
   riskScore: number;
   riskTier: "LOW" | "MODERATE" | "HIGH" | "VERY_HIGH";
 };
+
+export type LoanRow = import("mysql2").RowDataPacket & {
+  loan_id: string; borrower_id: string; officer_id: string | null;
+  mongodb_credit_profile_id: string; principal_amount: number;
+  annual_interest_rate: number; term_months: number; purpose: string;
+  outstanding_principal: number; overdue_amount: number; days_overdue: number;
+  disbursed_at: string | null; assessment_snapshot: RiskMetrics | string | null;
+  status: string; created_at: string; updated_at: string; officer_name?: string;
+};
+export type RepaymentRow = import("mysql2").RowDataPacket & {
+  repayment_id: string; loan_id: string; installment_number: number;
+  due_date: string; principal_due: number; interest_due: number;
+  total_due: number; amount_paid: number; is_settled: boolean;
+};
+export type TransferAccount = { account_id: string; account_number: string; balance: number; status: string; };
+export type Beneficiary = { beneficiary_id: string; account_id: string; account_number: string; nickname: string | null; beneficiary_name: string; is_verified: boolean; };
+
+export type CollateralRow = import("mysql2").RowDataPacket & {collateral_id:string;loan_id:string;collateral_type:string;description:string;estimated_value:number;valuation_date:string;status:string};
+
+export type FinancialProfileDraft = Omit<import("./risk-calculator").FinancialProfile,"financial_statements"> & {financial_statements: (Omit<import("./risk-calculator").Statement,typeof import("./risk-calculator").statementFields[number]> & Record<typeof import("./risk-calculator").statementFields[number],number | null>)[]};

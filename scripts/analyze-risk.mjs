@@ -1,0 +1,2 @@
+import {mongoDb} from "../lib/mongodb.ts";import {getRiskMetrics} from "../lib/risk.ts";
+try {for await(const p of (await mongoDb()).collection("credit_profiles").find({},{projection:{_id:1}})){const risk=await getRiskMetrics(String(p._id));console.log(risk?{borrower:risk.legalName,dscr:risk.dscr,ocfMargin:risk.ocfMargin,currentRatio:risk.currentRatio,score:risk.riskScore,tier:risk.riskTier,model:risk.modelVersion}:"Profile requires current, complete financial statements");}}finally{await global.__mongoClientPromise?.then(c=>c.close()).catch(()=>{});}

@@ -1,4 +1,5 @@
 import type { RowDataPacket } from "mysql2";
+import type { CollateralRow, LoanRow, RepaymentRow, TransferAccount, Beneficiary } from "@/lib/types";
 import { db } from "@/lib/mysql";
 import { getRiskMetrics } from "@/lib/risk";
 
@@ -33,7 +34,7 @@ export async function getCustomerOverview(userId: string) {
     SELECT l.*, (SELECT COUNT(*) FROM loan_repayments r WHERE r.loan_id=l.loan_id AND r.is_settled=0) remaining_installments,
       (SELECT MIN(due_date) FROM loan_repayments r WHERE r.loan_id=l.loan_id AND r.is_settled=0) next_due_date,
       (SELECT total_due FROM loan_repayments r WHERE r.loan_id=l.loan_id AND r.is_settled=0 ORDER BY installment_number LIMIT 1) next_due_amount
-    FROM loans l WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
+    FROM vw_loan_positions l WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
 
   const totalBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
   return { accounts, transactions, trend, loans: loanRows, totalBalance };
@@ -50,26 +51,28 @@ export async function getCustomerTransferData(userId: string) {
     JOIN accounts a ON a.account_id=b.beneficiary_account_id
     JOIN users u ON u.user_id=a.user_id
     WHERE b.user_id=? ORDER BY b.created_at DESC`, [userId]);
-  return { accounts, beneficiaries };
+  return { accounts: accounts as (RowDataPacket & TransferAccount)[], beneficiaries: beneficiaries as (RowDataPacket & Beneficiary)[] };
 }
 
 export async function getCustomerLoans(userId: string) {
-  const [loans] = await db.query<RowDataPacket[]>(`
+  const [loans] = await db.query<LoanRow[]>(`
     SELECT l.*, CONCAT(o.first_name,' ',o.last_name) officer_name
-    FROM loans l LEFT JOIN users o ON o.user_id=l.officer_id
+    FROM vw_loan_positions l LEFT JOIN users o ON o.user_id=l.officer_id
     WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
 
-  const [repayments] = await db.query<RowDataPacket[]>(`
+  const [repayments] = await db.query<RepaymentRow[]>(`
     SELECT r.* FROM loan_repayments r JOIN loans l ON l.loan_id=r.loan_id
     WHERE l.borrower_id=? ORDER BY r.loan_id, r.installment_number`, [userId]);
 
-  const grouped = new Map<string, RowDataPacket[]>();
+  const [collateral]=await db.query<CollateralRow[]>("SELECT c.* FROM collateral c JOIN loans l ON l.loan_id=c.loan_id WHERE l.borrower_id=? ORDER BY c.created_at",[userId]);
+  const grouped = new Map<string, RepaymentRow[]>();
   repayments.forEach((r) => grouped.set(r.loan_id, [...(grouped.get(r.loan_id) ?? []), r]));
 
   const result = await Promise.all(loans.map(async (loan) => ({
     ...loan,
+    collateral:collateral.filter(c=>c.loan_id===loan.loan_id),
     repayments: grouped.get(loan.loan_id) ?? [],
-    risk: await getRiskMetrics(loan.mongodb_credit_profile_id),
+    risk: loan.assessment_snapshot ? (typeof loan.assessment_snapshot === "string" ? JSON.parse(loan.assessment_snapshot) : loan.assessment_snapshot) : await getRiskMetrics(loan.mongodb_credit_profile_id),
   })));
   return result;
 }

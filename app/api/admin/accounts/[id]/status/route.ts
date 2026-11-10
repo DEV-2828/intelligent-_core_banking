@@ -1,17 +1,2 @@
-import { NextResponse } from "next/server";
-import type { RowDataPacket } from "mysql2";
-import { getSessionUser } from "@/lib/auth";
-import { db } from "@/lib/mysql";
-
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "risk_admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { id } = await params;
-  const { status } = await request.json();
-  if (!["active","frozen"].includes(status)) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  const [rows] = await db.query<RowDataPacket[]>(`SELECT account_id FROM accounts WHERE account_id=?`, [id]);
-  if (!rows.length) return NextResponse.json({ error: "Account not found" }, { status: 404 });
-  await db.query(`UPDATE accounts SET status=? WHERE account_id=?`, [status, id]);
-  await db.query(`INSERT INTO security_logs(user_id,event_type,ip_address,details) VALUES(?,?,?,?)`, [user.userId, "account_freeze", "application", `Account ${id} changed to ${status}`]);
-  return NextResponse.json({ ok: true });
-}
+import type {RowDataPacket} from "mysql2";import {bankingRoute} from "@/lib/api";import {BankingError,withOperation} from "@/lib/operations";
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){return bankingRoute(request,["risk_admin"],async(user,key)=>{const {id}=await params,{status}=await request.json();if(!["active","frozen"].includes(status))throw new BankingError("Invalid account status");return withOperation(user.userId,key,"account-status",{id,status},async c=>{const [rows]=await c.query<RowDataPacket[]>("SELECT a.status FROM accounts a JOIN users u ON u.user_id=a.user_id WHERE a.account_id=? AND u.role='customer' FOR UPDATE",[id]);if(!rows.length)throw new BankingError("Customer account not found",404);if(rows[0].status==="closed")throw new BankingError("Closed accounts cannot be reopened by a freeze control",409);await c.query("UPDATE accounts SET status=? WHERE account_id=?",[status,id]);await c.query("INSERT INTO security_logs(user_id,event_type,details) VALUES(?,?,?)",[user.userId,status==="frozen"?"account_freeze":"account_unfreeze","Account "+id+" changed to "+status]);return {ok:true};});});}

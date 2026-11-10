@@ -1,3 +1,5 @@
+import {db} from "@/lib/mysql";
+import type {RowDataPacket} from "mysql2";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
@@ -46,7 +48,10 @@ export async function verifySessionToken(token: string): Promise<SessionUser | n
 export async function getSessionUser(): Promise<SessionUser | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  return token ? verifySessionToken(token) : null;
+  const session=token?await verifySessionToken(token):null;
+  if(!session)return null;
+  const [rows]=await db.query<RowDataPacket[]>("SELECT role,is_active FROM users WHERE user_id=?",[session.userId]);
+  return rows[0]?.is_active && rows[0].role===session.role ? session : null;
 }
 
 export async function requireUser(allowed?: UserRole[]): Promise<SessionUser> {
