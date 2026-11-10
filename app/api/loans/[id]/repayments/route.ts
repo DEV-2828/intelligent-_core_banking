@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/errors";
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2";
 import { getSessionUser } from "@/lib/auth";
@@ -18,8 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!bankAccount) return NextResponse.json({ error: "BANK_REPAYMENT_ACCOUNT_ID is not configured" }, { status: 500 });
     await db.query(`CALL sp_pay_loan_installment(?,?,?)`, [repaymentId, sourceAccountId, bankAccount]);
     return NextResponse.json({ ok: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ error: error?.sqlMessage ?? error?.message ?? "Repayment failed" }, { status: 400 });
+    return NextResponse.json({ error: errorMessage(error, "Repayment failed") }, { status: 400 });
   }
 }

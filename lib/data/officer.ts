@@ -1,9 +1,10 @@
 import type { RowDataPacket } from "mysql2";
+import type { LoanRow } from "@/lib/types";
 import { db } from "@/lib/mysql";
 import { getRiskMetrics } from "@/lib/risk";
 
 export async function getOfficerDashboard(officerId: string) {
-  const [applications] = await db.query<RowDataPacket[]>(`
+  const [applications] = await db.query<(LoanRow & { borrower_name: string; borrower_email: string; collateral_value: number | null })[]>(`
     SELECT l.*, CONCAT(u.first_name,' ',u.last_name) borrower_name, u.email borrower_email,
            c.collateral_type, c.estimated_value collateral_value
     FROM loans l

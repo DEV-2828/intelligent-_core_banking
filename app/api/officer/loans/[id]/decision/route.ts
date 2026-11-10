@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/errors";
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2";
 import { ObjectId } from "mongodb";
@@ -32,8 +33,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       throw mongoError;
     }
     return NextResponse.json({ ok: true, decision });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ error: error?.sqlMessage ?? error?.message ?? "Decision failed" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error, "Decision failed") }, { status: 500 });
   }
 }

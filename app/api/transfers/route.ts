@@ -1,3 +1,4 @@
+import { errorMessage } from "@/lib/errors";
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2";
 import { getSessionUser } from "@/lib/auth";
@@ -25,8 +26,8 @@ export async function POST(request: Request) {
       const [ids] = await conn.query<RowDataPacket[]>(`SELECT @transfer_id AS transaction_id`);
       return NextResponse.json({ ok: true, transactionId: ids[0]?.transaction_id });
     } finally { conn.release(); }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ error: error?.sqlMessage ?? error?.message ?? "Transfer failed" }, { status: 400 });
+    return NextResponse.json({ error: errorMessage(error, "Transfer failed") }, { status: 400 });
   }
 }

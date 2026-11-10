@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import { redirect } from "next/navigation";
 import { Activity, Database, Fingerprint, Gauge, Landmark, ShieldCheck } from "lucide-react";
 import { dashboardForRole, getSessionUser } from "@/lib/auth";
@@ -26,4 +27,4 @@ export default async function LoginPage() {
   </main>;
 }
 
-function Feature({ icon: Icon, title, text }: { icon: any; title: string; text: string }) { return <div className="rounded-2xl border border-slate-700/20 bg-slate-900/25 p-4"><Icon size={17} className="text-cyan-300"/><p className="mt-3 text-xs font-semibold text-slate-200">{title}</p><p className="mt-1 text-[10px] leading-4 text-slate-600">{text}</p></div>; }
+function Feature({ icon: Icon, title, text }: { icon: LucideIcon; title: string; text: string }) { return <div className="rounded-2xl border border-slate-700/20 bg-slate-900/25 p-4"><Icon size={17} className="text-cyan-300"/><p className="mt-3 text-xs font-semibold text-slate-200">{title}</p><p className="mt-1 text-[10px] leading-4 text-slate-600">{text}</p></div>; }

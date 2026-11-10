@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { errorMessage } from "@/lib/errors";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getSessionUser } from "@/lib/auth";
@@ -24,8 +25,8 @@ export async function POST(request: Request) {
     const mdb = await mongoDb();
     await mdb.collection("credit_profiles").updateOne({ _id: new ObjectId(String(profile._id)) }, { $set: { underwriting_status: "UNDER_REVIEW", updated_at: new Date() } });
     return NextResponse.json({ ok: true, loanId, riskTier: risk.riskTier, recommendedRate: rate });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ error: error?.sqlMessage ?? error?.message ?? "Loan application failed" }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error, "Loan application failed") }, { status: 500 });
   }
 }

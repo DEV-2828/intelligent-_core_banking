@@ -1,11 +1,12 @@
 "use client";
 
+import type { TransferAccount, Beneficiary } from "@/lib/types";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, ShieldCheck } from "lucide-react";
 import { formatCurrency, maskAccount } from "@/lib/format";
 
-export function TransferForm({ accounts, beneficiaries }: { accounts: any[]; beneficiaries: any[] }) {
+export function TransferForm({ accounts, beneficiaries }: { accounts: TransferAccount[]; beneficiaries: Beneficiary[] }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);

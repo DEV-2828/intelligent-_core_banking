@@ -1,4 +1,5 @@
 import type { RowDataPacket } from "mysql2";
+import type { LoanRow, RepaymentRow, TransferAccount, Beneficiary } from "@/lib/types";
 import { db } from "@/lib/mysql";
 import { getRiskMetrics } from "@/lib/risk";
 
@@ -50,20 +51,20 @@ export async function getCustomerTransferData(userId: string) {
     JOIN accounts a ON a.account_id=b.beneficiary_account_id
     JOIN users u ON u.user_id=a.user_id
     WHERE b.user_id=? ORDER BY b.created_at DESC`, [userId]);
-  return { accounts, beneficiaries };
+  return { accounts: accounts as (RowDataPacket & TransferAccount)[], beneficiaries: beneficiaries as (RowDataPacket & Beneficiary)[] };
 }
 
 export async function getCustomerLoans(userId: string) {
-  const [loans] = await db.query<RowDataPacket[]>(`
+  const [loans] = await db.query<LoanRow[]>(`
     SELECT l.*, CONCAT(o.first_name,' ',o.last_name) officer_name
     FROM loans l LEFT JOIN users o ON o.user_id=l.officer_id
     WHERE l.borrower_id=? ORDER BY l.created_at DESC`, [userId]);
 
-  const [repayments] = await db.query<RowDataPacket[]>(`
+  const [repayments] = await db.query<RepaymentRow[]>(`
     SELECT r.* FROM loan_repayments r JOIN loans l ON l.loan_id=r.loan_id
     WHERE l.borrower_id=? ORDER BY r.loan_id, r.installment_number`, [userId]);
 
-  const grouped = new Map<string, RowDataPacket[]>();
+  const grouped = new Map<string, RepaymentRow[]>();
   repayments.forEach((r) => grouped.set(r.loan_id, [...(grouped.get(r.loan_id) ?? []), r]));
 
   const result = await Promise.all(loans.map(async (loan) => ({
