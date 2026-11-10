@@ -12,7 +12,8 @@
     "db:check": "node --env-file=.env.local scripts/check-databases.mjs",
     "db:setup:mongo": "node --env-file=.env.local scripts/setup-mongo.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate-mysql.mjs",
-    "sync:loans": "node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types scripts/sync-loans.mjs"
+    "sync:loans": "node --env-file=.env.local --import ./scripts/register-ts.mjs --experimental-strip-types scripts/sync-loans.mjs",
+    "test": "node --import ./scripts/register-ts.mjs --experimental-strip-types --test tests/unit.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -35,5 +36,9 @@
     "postcss": "^8.5.0",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
   }
 }
