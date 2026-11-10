@@ -19,6 +19,7 @@ export type RiskMetrics = {
   dscr: number | null;
   ocfMargin: number;
   currentRatio: number | null;
+  inputs?: import("./risk-calculator").FinancialProfile;
   modelVersion: string;
   assessedAt: string;
   riskScore: number;
@@ -39,3 +40,5 @@ export type RepaymentRow = import("mysql2").RowDataPacket & {
 };
 export type TransferAccount = { account_id: string; account_number: string; balance: number; status: string; };
 export type Beneficiary = { beneficiary_id: string; account_id: string; account_number: string; nickname: string | null; beneficiary_name: string; is_verified: boolean; };
+
+export type CollateralRow = import("mysql2").RowDataPacket & {collateral_id:string;loan_id:string;collateral_type:string;description:string;estimated_value:number;valuation_date:string;status:string};

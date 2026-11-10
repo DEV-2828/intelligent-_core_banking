@@ -49,6 +49,6 @@ export function calculateRisk(input: unknown, profileId: string, borrowerId: str
  const clamp=(x:number)=>Math.max(0,Math.min(1,x));
  const score=clamp(p.credit_bureau_payload.score/850)*30+clamp((dscr??2)/2)*40+clamp((currentRatio??2)/2)*20+clamp(1-p.credit_bureau_payload.delinquencies_24m*0.25)*10;
  const round=(x:number)=>Math.round(x*100)/100;
- return {profileId,borrowerId,legalName:p.legal_name,entityType:p.entity_type,underwritingStatus,bureauScore:p.credit_bureau_payload.score,delinquencies:p.credit_bureau_payload.delinquencies_24m,dscr:dscr===null?null:round(dscr),ocfMargin:round(sum("operating_cash_flow")/revenue*100),currentRatio:currentRatio===null?null:round(currentRatio),riskScore:round(score),riskTier:score>=80?"LOW":score>=65?"MODERATE":score>=50?"HIGH":"VERY_HIGH",modelVersion:MODEL_VERSION,assessedAt:asOf.toISOString()};
+ return {inputs:p,profileId,borrowerId,legalName:p.legal_name,entityType:p.entity_type,underwritingStatus,bureauScore:p.credit_bureau_payload.score,delinquencies:p.credit_bureau_payload.delinquencies_24m,dscr:dscr===null?null:round(dscr),ocfMargin:round(sum("operating_cash_flow")/revenue*100),currentRatio:currentRatio===null?null:round(currentRatio),riskScore:round(score),riskTier:score>=80?"LOW":score>=65?"MODERATE":score>=50?"HIGH":"VERY_HIGH",modelVersion:MODEL_VERSION,assessedAt:asOf.toISOString()};
 }
 export function recommendedAnnualRate(tier: RiskMetrics["riskTier"]) { return {LOW:0.0925,MODERATE:0.115,HIGH:0.14,VERY_HIGH:0.18}[tier]; }

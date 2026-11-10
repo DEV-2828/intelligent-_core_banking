@@ -1,5 +1,5 @@
 import type { RowDataPacket } from "mysql2";
-import type { LoanRow, RepaymentRow, TransferAccount, Beneficiary } from "@/lib/types";
+import type { CollateralRow, LoanRow, RepaymentRow, TransferAccount, Beneficiary } from "@/lib/types";
 import { db } from "@/lib/mysql";
 import { getRiskMetrics } from "@/lib/risk";
 
@@ -64,11 +64,13 @@ export async function getCustomerLoans(userId: string) {
     SELECT r.* FROM loan_repayments r JOIN loans l ON l.loan_id=r.loan_id
     WHERE l.borrower_id=? ORDER BY r.loan_id, r.installment_number`, [userId]);
 
+  const [collateral]=await db.query<CollateralRow[]>("SELECT c.* FROM collateral c JOIN loans l ON l.loan_id=c.loan_id WHERE l.borrower_id=? ORDER BY c.created_at",[userId]);
   const grouped = new Map<string, RepaymentRow[]>();
   repayments.forEach((r) => grouped.set(r.loan_id, [...(grouped.get(r.loan_id) ?? []), r]));
 
   const result = await Promise.all(loans.map(async (loan) => ({
     ...loan,
+    collateral:collateral.filter(c=>c.loan_id===loan.loan_id),
     repayments: grouped.get(loan.loan_id) ?? [],
     risk: loan.assessment_snapshot ? (typeof loan.assessment_snapshot === "string" ? JSON.parse(loan.assessment_snapshot) : loan.assessment_snapshot) : await getRiskMetrics(loan.mongodb_credit_profile_id),
   })));
